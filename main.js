@@ -734,7 +734,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           envContent = envContent.replace(/pattern=[^,\]]+/g, 'fill=gray!50');
           
           let p = prefix ? prefix : '';
-          let newCode = `\n${p}\\usepackage{circuitikz}\n${p}\\usepackage{amsmath}\n${p}\\begin{document}\n${p}\\begin{${envName}}${envContent}${envEnd}\n${p}\\end{document}\n${p}`;
+          let newCode = `\n${p}\\usepackage{circuitikz}\n${p}\\usepackage{amsmath}\n${p}\\usetikzlibrary{decorations.markings}\n${p}\\begin{document}\n${p}\\begin{${envName}}${envContent}${envEnd}\n${p}\\end{document}\n${p}`;
           
           let replacement = `${p}\`\`\`tikz${newCode}\`\`\``;
           
