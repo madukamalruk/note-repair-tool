@@ -1,0 +1,10 @@
+{
+  "id": "note-repair-tool",
+  "name": "Note Repair Tool",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Automatically repairs split Markdown tables, broken YAML frontmatter, AI conversational preambles, callout math formatting, and Mermaid syntax errors.",
+  "author": "Antigravity AI",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
