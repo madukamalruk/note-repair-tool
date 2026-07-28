@@ -39,4 +39,4 @@ Once enabled, you can repair your notes in multiple ways:
 This plugin is developed using Vanilla JavaScript. The core logic relies on heavily optimized regular expressions and state-machine parsing applied across the document lines. Check the `docs/` folder for Architecture and PRD details.
 
 ---
-*Created by Antigravity AI*
+*Created by Maduk using Antigravity*
