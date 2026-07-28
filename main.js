@@ -731,7 +731,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           let envContent = envMatch[2];
           let envEnd = envMatch[3];
           
-          let newCode = `\n\\usepackage{circuitikz}\n\\begin{document}\n\\begin{${envName}}${envContent}${envEnd}\n\\end{document}\n`;
+          let newCode = `\n\\usepackage{circuitikz}\n\\usepackage{amsmath}\n\\begin{document}\n\\begin{${envName}}${envContent}${envEnd}\n\\end{document}\n`;
           
           if (originalCode !== newCode) {
               fixedCount++;
