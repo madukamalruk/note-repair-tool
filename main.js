@@ -726,6 +726,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       cleaned = cleaned.replace(/\\begin\{document\}/g, '');
       cleaned = cleaned.replace(/\\end\{document\}/g, '');
       
+      // Fix TikzJax unsupported features (e.g., \text inside math, patterns)
+      cleaned = cleaned.replace(/\\text\{([^}]*)\}/g, '\\mathrm{$1}');
+      cleaned = cleaned.replace(/pattern=[^,\]]+/g, 'fill=gray!50');
+      
       // Clean up multiple empty lines that might have been left over at the start/end
       cleaned = cleaned.replace(/^\s*\n/g, '\n');
       cleaned = cleaned.replace(/\n\s*$/g, '\n');
