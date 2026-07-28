@@ -716,14 +716,13 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
   fixTikz(text) {
     let fixedCount = 0;
-    let tikzRegex = /```tikz([\s\S]*?)```/g;
+    // Capture any prefix (like blockquotes or indentation) before ```tikz
+    let tikzRegex = /^([ \t>]*?)```tikz([\s\S]*?)```/gm;
 
-    let fixedText = text.replace(tikzRegex, (match, code) => {
+    let fixedText = text.replace(tikzRegex, (match, prefix, code) => {
       let originalCode = code;
       
       // The obsidian-tikzjax plugin (artisticat1 fork) requires \begin{document}
-      // and allows \usepackage, but injecting \documentclass causes errors because
-      // the plugin wraps the code with it internally.
       let envMatch = code.match(/\\begin\{(tikzpicture|circuitikz)\}([\s\S]*?)(\\end\{\1\})/);
       
       if (envMatch) {
@@ -734,12 +733,15 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           // Fix unsupported pattern attribute by replacing it with a solid fill
           envContent = envContent.replace(/pattern=[^,\]]+/g, 'fill=gray!50');
           
-          let newCode = `\n\\usepackage{circuitikz}\n\\usepackage{amsmath}\n\\begin{document}\n\\begin{${envName}}${envContent}${envEnd}\n\\end{document}\n`;
+          let p = prefix ? prefix : '';
+          let newCode = `\n${p}\\usepackage{circuitikz}\n${p}\\usepackage{amsmath}\n${p}\\begin{document}\n${p}\\begin{${envName}}${envContent}${envEnd}\n${p}\\end{document}\n${p}`;
           
-          if (originalCode !== newCode) {
+          let replacement = `${p}\`\`\`tikz${newCode}\`\`\``;
+          
+          if (match !== replacement) {
               fixedCount++;
           }
-          return '```tikz' + newCode + '```';
+          return replacement;
       }
       
       return match;
