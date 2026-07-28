@@ -731,6 +731,9 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           let envContent = envMatch[2];
           let envEnd = envMatch[3];
           
+          // Fix unsupported pattern attribute by replacing it with a solid fill
+          envContent = envContent.replace(/pattern=[^,\]]+/g, 'fill=gray!50');
+          
           let newCode = `\n\\usepackage{circuitikz}\n\\usepackage{amsmath}\n\\begin{document}\n\\begin{${envName}}${envContent}${envEnd}\n\\end{document}\n`;
           
           if (originalCode !== newCode) {
