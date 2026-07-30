@@ -219,12 +219,12 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       summaryStr += `Fixed ${tableResult.mergedRows} broken table rows`;
     }
 
-    // 3.5 Callouts in Tables
-    const calloutTableRes = this.fixCalloutsInTables(text);
-    if (calloutTableRes.fixed) {
-      text = calloutTableRes.text;
+    // 3.5 Embedded Callouts
+    const embedCalloutRes = this.fixEmbeddedCallouts(text);
+    if (embedCalloutRes.fixed) {
+      text = embedCalloutRes.text;
       if (summaryStr.length > 0) summaryStr += ', ';
-      summaryStr += 'Extracted callouts from tables';
+      summaryStr += 'Extracted embedded callouts';
     }
 
     // 7. Youtube Links
@@ -589,26 +589,57 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     return { text: out.join('\n'), fixedCount };
   }
 
-  fixCalloutsInTables(text) {
+  fixEmbeddedCallouts(text) {
     let lines = text.split('\n');
     let out = [];
     let fixedCount = 0;
+    let inCodeBlock = false;
+
+    const calloutRegex = /^(.*?)\s*\[!(note|info|todo|warning|caution|danger|error|bug|tip|hint|success|check|done|question|help|faq|example|quote|cite)\]\s*(.*)$/i;
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
-      let t = line.trim();
       
-      if (t.startsWith('|')) {
-        let parts = line.split('|');
-        if (parts.length > 1) {
-          let firstCell = parts[1].trim();
-          if (firstCell.match(/^\[!(note|info|todo|warning|caution|danger|error|bug|tip|hint|success|check|done|question|help|faq|example|quote|cite)\]/i)) {
-            let content = line.replace(/^\s*\|\s*/, '');
-            content = content.replace(/(\s*\|\s*)+$/, '');
-            out.push(`> ${content}`);
-            fixedCount++;
+      if (line.trim().startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+      }
+
+      if (!inCodeBlock) {
+        let match = line.match(calloutRegex);
+        if (match) {
+          let prefix = match[1];
+          let type = match[2];
+          let suffix = match[3];
+
+          if (prefix.trim() === '>' || prefix.trim() === '') {
+            if (!prefix.includes('>')) {
+               out.push(`> [!${type}] ${suffix}`);
+               fixedCount++;
+               continue;
+            } else {
+               out.push(line);
+               continue;
+            }
+          }
+
+          if (prefix.endsWith('`')) {
+            out.push(line);
             continue;
           }
+
+          let cleanPrefix = prefix.trimEnd();
+          
+          if (cleanPrefix.startsWith('|') && !cleanPrefix.endsWith('|')) {
+            cleanPrefix += ' |';
+          }
+
+          if (cleanPrefix.length > 0) {
+            out.push(cleanPrefix);
+            out.push('');
+          }
+          out.push(`> [!${type}] ${suffix}`);
+          fixedCount++;
+          continue;
         }
       }
       out.push(line);
