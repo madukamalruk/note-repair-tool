@@ -423,6 +423,8 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
             if (t.startsWith('#') || t.startsWith('```') || t.startsWith('---')) break;
 
+            if (!t.startsWith('|') && !t.includes('|') && t !== '') break;
+
             if (t === '') {
               let nextLine = lines[i + 1] ? this.extractPrefix(lines[i + 1]).content.trim() : '';
               if (!nextLine.startsWith('|') && !nextLine.endsWith('|') && nextLine !== '') {
