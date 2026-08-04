@@ -3,14 +3,13 @@
    This file adds custom styling rules to Obsidian.
 */
 
-/* Define console-like colors for code blocks */
+/* Define console-like colors for code blocks matching standard IDEs */
 body {
-    --console-bg: #1e1e1e;
-    --console-text: #d4d4d4;
+    --console-bg: #0d0d0d;
+    --console-text: #e0e0e0;
 }
 
 /* 1. Reading View Styling */
-/* Apply to all pre blocks except mermaid, tikz, math */
 .markdown-rendered pre:not(.language-mermaid):not(.language-tikz):not(.language-math) {
     background-color: var(--console-bg) !important;
     color: var(--console-text) !important;
@@ -25,14 +24,52 @@ body {
     color: var(--console-text) !important;
 }
 
-/* 2. Live Preview Styling */
-/* Apply dark background to code block lines in editing mode */
+/* Explicit PrismJS Token Colors for Reading View */
+.markdown-rendered pre:not(.language-mermaid) .token.comment { color: #7a7a7a !important; font-style: italic; }
+.markdown-rendered pre:not(.language-mermaid) .token.keyword { color: #499ced !important; }
+.markdown-rendered pre:not(.language-mermaid) .token.string { color: #ff79c6 !important; }
+.markdown-rendered pre:not(.language-mermaid) .token.number { color: #50fa7b !important; }
+.markdown-rendered pre:not(.language-mermaid) .token.operator { color: #e0e0e0 !important; }
+.markdown-rendered pre:not(.language-mermaid) .token.function { color: #ffb86c !important; }
+.markdown-rendered pre:not(.language-mermaid) .token.builtin { color: #ffb86c !important; }
+.markdown-rendered pre:not(.language-mermaid) .token.property { color: #ffb86c !important; }
+.markdown-rendered pre:not(.language-mermaid) .token.punctuation { color: #a0a0a0 !important; }
+.markdown-rendered pre:not(.language-mermaid) .token.boolean { color: #499ced !important; }
+.markdown-rendered pre:not(.language-mermaid) .token.variable { color: #e0e0e0 !important; }
+
+/* 2. Live Preview Styling (CM6) */
 .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock {
     background-color: var(--console-bg) !important;
     color: var(--console-text) !important;
 }
 
-/* Optional: Make the backticks line dark too in Live Preview */
+/* CM6 Token Colors for Live Preview */
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-comment { color: #7a7a7a !important; font-style: italic; }
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-keyword { color: #499ced !important; }
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-string { color: #ff79c6 !important; }
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-number { color: #50fa7b !important; }
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-operator { color: #e0e0e0 !important; }
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-function { color: #ffb86c !important; }
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-builtin { color: #ffb86c !important; }
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-property { color: #ffb86c !important; }
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-punctuation { color: #a0a0a0 !important; }
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-boolean { color: #499ced !important; }
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-variable { color: #e0e0e0 !important; }
+
+/* Also override standard CSS variables just in case Obsidian themes try to override */
+body {
+    --code-comment: #7a7a7a !important;
+    --code-keyword: #499ced !important;
+    --code-string: #ff79c6 !important;
+    --code-number: #50fa7b !important;
+    --code-operator: #e0e0e0 !important;
+    --code-function: #ffb86c !important;
+    --code-builtin: #ffb86c !important;
+    --code-property: #ffb86c !important;
+    --code-punctuation: #a0a0a0 !important;
+}
+
+/* Make the backticks line dark too in Live Preview */
 .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-begin,
 .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-end {
     background-color: #2d2d2d !important;
