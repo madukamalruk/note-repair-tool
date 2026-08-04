@@ -1,77 +1,141 @@
 /* 
    Note Repair Tool - Custom Styles 
-   This file adds custom styling rules to Obsidian.
+   Adds dark IDE-style code blocks with macOS window decorations and syntax highlighting.
 */
 
-/* Define console-like colors for code blocks matching standard IDEs */
+/* ─── Global Dark Theme Variables ─────────────────────────────────────────── */
 body {
-    --console-bg: #0d0d0d;
+    --console-bg: #1a1a1a;
     --console-text: #e0e0e0;
+    --console-header: #2d2d2d;
+    --console-border: #3a3a3a;
+    --console-radius: 10px;
+    --dot-red: #ff5f57;
+    --dot-yellow: #ffbd2e;
+    --dot-green: #28c840;
 }
 
-/* 1. Reading View Styling */
+/* ─── Reading View Code Blocks ─────────────────────────────────────────────── */
 .markdown-rendered pre:not(.language-mermaid):not(.language-tikz):not(.language-math) {
+    position: relative;
     background-color: var(--console-bg) !important;
     color: var(--console-text) !important;
-    border-radius: 8px;
-    padding: 1em;
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
-    border: 1px solid #333;
+    border-radius: var(--console-radius);
+    padding: 1.2em 1.2em 1.2em 1.2em;
+    padding-top: 2.8em; /* room for the dots header */
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    border: 1px solid var(--console-border);
+    margin: 1em 0;
+    overflow-x: auto;
 }
 
+/* macOS-style title bar with dots */
+.markdown-rendered pre:not(.language-mermaid):not(.language-tikz):not(.language-math)::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2.2em;
+    background-color: var(--console-header);
+    border-radius: var(--console-radius) var(--console-radius) 0 0;
+    border-bottom: 1px solid var(--console-border);
+}
+
+/* The three colored dots */
+.markdown-rendered pre:not(.language-mermaid):not(.language-tikz):not(.language-math)::after {
+    content: '';
+    position: absolute;
+    top: 0.65em;
+    left: 0.9em;
+    width: 0.75em;
+    height: 0.75em;
+    border-radius: 50%;
+    background-color: var(--dot-red);
+    box-shadow:
+        1.2em 0 0 var(--dot-yellow),
+        2.4em 0 0 var(--dot-green);
+}
+
+/* Code inside pre */
 .markdown-rendered pre:not(.language-mermaid):not(.language-tikz):not(.language-math) code {
     background-color: transparent !important;
     color: var(--console-text) !important;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace !important;
+    font-size: 0.88em;
+    line-height: 1.6;
 }
 
-/* Explicit PrismJS Token Colors for Reading View */
-.markdown-rendered pre:not(.language-mermaid) .token.comment { color: #7a7a7a !important; font-style: italic; }
-.markdown-rendered pre:not(.language-mermaid) .token.keyword { color: #499ced !important; }
-.markdown-rendered pre:not(.language-mermaid) .token.string { color: #ff79c6 !important; }
-.markdown-rendered pre:not(.language-mermaid) .token.number { color: #50fa7b !important; }
-.markdown-rendered pre:not(.language-mermaid) .token.operator { color: #e0e0e0 !important; }
-.markdown-rendered pre:not(.language-mermaid) .token.function { color: #ffb86c !important; }
-.markdown-rendered pre:not(.language-mermaid) .token.builtin { color: #ffb86c !important; }
-.markdown-rendered pre:not(.language-mermaid) .token.property { color: #ffb86c !important; }
-.markdown-rendered pre:not(.language-mermaid) .token.punctuation { color: #a0a0a0 !important; }
-.markdown-rendered pre:not(.language-mermaid) .token.boolean { color: #499ced !important; }
-.markdown-rendered pre:not(.language-mermaid) .token.variable { color: #e0e0e0 !important; }
+/* ─── PrismJS Syntax Highlighting (Reading View) ───────────────────────────── */
+.markdown-rendered pre .token.comment,
+.markdown-rendered pre .token.prolog,
+.markdown-rendered pre .token.doctype,
+.markdown-rendered pre .token.cdata             { color: #6a737d !important; font-style: italic; }
 
-/* 2. Live Preview Styling (CM6) */
+.markdown-rendered pre .token.keyword,
+.markdown-rendered pre .token.rule,
+.markdown-rendered pre .token.selector          { color: #e06c75 !important; }
+
+.markdown-rendered pre .token.string,
+.markdown-rendered pre .token.attr-value,
+.markdown-rendered pre .token.char             { color: #98c379 !important; }
+
+.markdown-rendered pre .token.number,
+.markdown-rendered pre .token.boolean,
+.markdown-rendered pre .token.constant          { color: #d19a66 !important; }
+
+.markdown-rendered pre .token.function,
+.markdown-rendered pre .token.class-name        { color: #61afef !important; }
+
+.markdown-rendered pre .token.property,
+.markdown-rendered pre .token.operator          { color: #c678dd !important; }
+
+.markdown-rendered pre .token.punctuation       { color: #abb2bf !important; }
+
+.markdown-rendered pre .token.variable,
+.markdown-rendered pre .token.attr-name         { color: #e5c07b !important; }
+
+/* ─── Obsidian CSS Variables (used by some themes) ─────────────────────────── */
+body {
+    --code-background: var(--console-bg);
+    --code-normal: var(--console-text);
+    --code-comment: #6a737d;
+    --code-keyword: #e06c75;
+    --code-string: #98c379;
+    --code-number: #d19a66;
+    --code-operator: #c678dd;
+    --code-function: #61afef;
+    --code-builtin: #61afef;
+    --code-property: #e5c07b;
+    --code-punctuation: #abb2bf;
+    --code-value: #d19a66;
+    --code-tag: #e06c75;
+}
+
+/* ─── Live Preview (CM6) Dark Background ───────────────────────────────────── */
 .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock {
     background-color: var(--console-bg) !important;
     color: var(--console-text) !important;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace !important;
 }
 
-/* CM6 Token Colors for Live Preview */
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-comment { color: #7a7a7a !important; font-style: italic; }
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-keyword { color: #499ced !important; }
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-string { color: #ff79c6 !important; }
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-number { color: #50fa7b !important; }
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-operator { color: #e0e0e0 !important; }
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-function { color: #ffb86c !important; }
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-builtin { color: #ffb86c !important; }
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-property { color: #ffb86c !important; }
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-punctuation { color: #a0a0a0 !important; }
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-boolean { color: #499ced !important; }
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock .cm-variable { color: #e0e0e0 !important; }
+/* CM6 Syntax Token Colors */
+.markdown-source-view.mod-cm6 .cm-comment                    { color: #6a737d !important; font-style: italic; }
+.markdown-source-view.mod-cm6 .cm-keyword                    { color: #e06c75 !important; }
+.markdown-source-view.mod-cm6 .cm-string                     { color: #98c379 !important; }
+.markdown-source-view.mod-cm6 .cm-number                     { color: #d19a66 !important; }
+.markdown-source-view.mod-cm6 .cm-operator                   { color: #c678dd !important; }
+.markdown-source-view.mod-cm6 .cm-def,
+.markdown-source-view.mod-cm6 .cm-function-name,
+.markdown-source-view.mod-cm6 .cm-callee                     { color: #61afef !important; }
+.markdown-source-view.mod-cm6 .cm-variable                   { color: #e5c07b !important; }
+.markdown-source-view.mod-cm6 .cm-property                   { color: #e5c07b !important; }
+.markdown-source-view.mod-cm6 .cm-punctuation                { color: #abb2bf !important; }
 
-/* Also override standard CSS variables just in case Obsidian themes try to override */
-body {
-    --code-comment: #7a7a7a !important;
-    --code-keyword: #499ced !important;
-    --code-string: #ff79c6 !important;
-    --code-number: #50fa7b !important;
-    --code-operator: #e0e0e0 !important;
-    --code-function: #ffb86c !important;
-    --code-builtin: #ffb86c !important;
-    --code-property: #ffb86c !important;
-    --code-punctuation: #a0a0a0 !important;
-}
-
-/* Make the backticks line dark too in Live Preview */
+/* Header bar for the code fence begin/end lines */
 .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-begin,
 .markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-end {
-    background-color: #2d2d2d !important;
-    color: #888 !important;
+    background-color: var(--console-header) !important;
+    color: #555 !important;
+    border-radius: var(--console-radius);
 }
