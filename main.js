@@ -135,120 +135,91 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     let text = rawText;
     let changes = [];
 
-    // 1. Normalize line endings and indentation
+    const track = (label, res, condition) => {
+      if (condition) { text = res.text !== undefined ? res.text : text; changes.push(label); }
+    };
+
+    // 1. Normalize CRLF → LF
     const indentRes = this.fixIndentation(text);
     text = indentRes.text;
-    if (indentRes.fixedCount > 0) {
-      changes.push(`Fixed Indentation/Spacing`);
-    }
+    if (indentRes.fixedCount > 0) changes.push('Fixed Indentation/Spacing');
 
-    // 2. YAML
+    // 2. YAML fixes (blank line after YAML, cleanup)
     const yamlRes = this.fixYaml(text);
-    text = yamlRes.text;
-    if (yamlRes.fixed) {
-      changes.push('Fixed YAML Frontmatter');
-    }
+    if (yamlRes.fixed) { text = yamlRes.text; changes.push('Fixed YAML Frontmatter'); }
 
-    // 3. Tables
+    // 3. Tables (ONE pass only — bug fix: was running twice)
     const tableRes = this.fixTables(text);
-    text = tableRes.text;
-    if (tableRes.mergedRows > 0) {
-      changes.push(`Merged ${tableRes.mergedRows} split table rows`);
-    }
+    if (tableRes.mergedRows > 0) { text = tableRes.text; changes.push(`Merged ${tableRes.mergedRows} split table rows`); }
 
-    // 4. Dataview
-    const dataviewRes = this.fixDataviewConflicts(text);
-    text = dataviewRes.text;
-    if (dataviewRes.fixedCount > 0) {
-      changes.push(`Fixed Dataview conflicts`);
-    }
-
-    // 5. Callouts
-    const calloutRes = this.fixCallouts(text);
-    text = calloutRes.text;
-    if (calloutRes.fixedCount > 0) {
-      changes.push(`Fixed ${calloutRes.fixedCount} callout math blocks`);
-    }
-
-    // 6. LaTeX
-    const latexRes = this.fixLatex(text);
-    text = latexRes.text;
-    if (latexRes.fixedCount > 0) {
-      changes.push(`Fixed LaTeX arrays`);
-    }
-
-    // 7. Mermaid
-    const mermaidRes = this.fixMermaid(text);
-    text = mermaidRes.text;
-    if (mermaidRes.fixedCount > 0) {
-      changes.push(`Fixed Mermaid diagrams`);
-    }
-
-    // 8. Highlights
-    const highlightRes = this.fixBrokenHighlights(text);
-    text = highlightRes.text;
-    if (highlightRes.fixedCount > 0) {
-      changes.push(`Fixed broken highlights`);
-    }
-
-    // 9. TikZ
-    const tikzRes = this.fixTikz(text);
-    text = tikzRes.text;
-    if (tikzRes.fixedCount > 0) {
-      changes.push(`Fixed TikZ diagrams`);
-    }
-
-    text = this.fixSpacing(text);
-
-    const isChanged = text !== rawText;
-    let summaryStr = changes.length > 0 ? changes.join(' | ') : 'No fixes needed';
-
-    // 6. Formatting (Bold)
-    const boldRes = this.fixBoldFormatting(text);
-    if (boldRes.fixed) {
-      text = boldRes.text;
-      if (summaryStr.length > 0) summaryStr += ', ';
-      summaryStr += 'Fixed broken bold markers';
-    }
-
-    // 3. Tables
-    const tableResult = this.fixTables(text);
-    if (tableResult.mergedRows > 0) {
-      text = tableResult.text;
-      if (summaryStr.length > 0) summaryStr += ', ';
-      summaryStr += `Fixed ${tableResult.mergedRows} broken table rows`;
-    }
-
-    // 3.5 Embedded Callouts
+    // 4. Embedded callouts (extract callouts stuck inside table rows / paragraph prefixes)
     const embedCalloutRes = this.fixEmbeddedCallouts(text);
-    if (embedCalloutRes.fixed) {
-      text = embedCalloutRes.text;
-      if (summaryStr.length > 0) summaryStr += ', ';
-      summaryStr += 'Extracted embedded callouts';
-    }
+    if (embedCalloutRes.fixed) { text = embedCalloutRes.text; changes.push('Extracted embedded callouts'); }
 
-    // 7. Youtube Links
-    const ytRes = this.fixYoutubeLinks(text);
-    if (ytRes.fixed) {
-      text = ytRes.text;
-      if (summaryStr.length > 0) summaryStr += ', ';
-      summaryStr += 'Converted YouTube links to embeds';
-    }
+    // 5. Dataview inline conflicts
+    const dataviewRes = this.fixDataviewConflicts(text);
+    if (dataviewRes.fixedCount > 0) { text = dataviewRes.text; changes.push('Fixed Dataview conflicts'); }
 
-    // 8. Code Block Languages
+    // 6. Callout math/LaTeX prefix repair
+    const calloutRes = this.fixCallouts(text);
+    if (calloutRes.fixedCount > 0) { text = calloutRes.text; changes.push(`Fixed ${calloutRes.fixedCount} callout math blocks`); }
+
+    // 7. LaTeX array environments
+    const latexRes = this.fixLatex(text);
+    if (latexRes.fixedCount > 0) { text = latexRes.text; changes.push('Fixed LaTeX arrays'); }
+
+    // 8. Mermaid diagram prefix repair
+    const mermaidRes = this.fixMermaid(text);
+    if (mermaidRes.fixedCount > 0) { text = mermaidRes.text; changes.push('Fixed Mermaid diagrams'); }
+
+    // 9. Broken ==highlights==
+    const highlightRes = this.fixBrokenHighlights(text);
+    if (highlightRes.fixedCount > 0) { text = highlightRes.text; changes.push('Fixed broken highlights'); }
+
+    // 10. TikZ package injection
+    const tikzRes = this.fixTikz(text);
+    if (tikzRes.fixedCount > 0) { text = tikzRes.text; changes.push('Fixed TikZ diagrams'); }
+
+    // 11. Bold marker repair
+    const boldRes = this.fixBoldFormatting(text);
+    if (boldRes.fixed) { text = boldRes.text; changes.push('Fixed broken bold markers'); }
+
+    // 12. Code block language tagging (Matlab/Python label → ```matlab tag)
     const codeLangRes = this.fixCodeBlockLanguages(text);
-    if (codeLangRes.fixed) {
-      text = codeLangRes.text;
-      if (summaryStr.length > 0) summaryStr += ', ';
-      summaryStr += 'Added syntax highlighting tags';
-    }
+    if (codeLangRes.fixed) { text = codeLangRes.text; changes.push('Added syntax highlighting tags'); }
+
+    // 13. YouTube link embedding
+    const ytRes = this.fixYoutubeLinks(text);
+    if (ytRes.fixed) { text = ytRes.text; changes.push('Converted YouTube links to embeds'); }
+
+    // ── Linter-inspired spacing rules ─────────────────────────────────────────
+
+    // 14. Blank line around $$ math blocks
+    const mathSpaceRes = this.fixEmptyLineAroundMath(text);
+    if (mathSpaceRes.fixed) { text = mathSpaceRes.text; changes.push('Spaced math blocks'); }
+
+    // 15. Blank line around ``` code fences
+    const codeSpaceRes = this.fixEmptyLineAroundCodeFences(text);
+    if (codeSpaceRes.fixed) { text = codeSpaceRes.text; changes.push('Spaced code fences'); }
+
+    // 16. Remove trailing whitespace from each line
+    const trailRes = this.fixTrailingSpaces(text);
+    if (trailRes.fixed) { text = trailRes.text; changes.push('Removed trailing spaces'); }
+
+    // 17. Collapse 3+ consecutive blank lines → max 2
+    const blankRes = this.fixConsecutiveBlankLines(text);
+    if (blankRes.fixed) { text = blankRes.text; changes.push('Collapsed excess blank lines'); }
+
+    // 18. Global spacing pass (final polish)
+    text = this.fixSpacing(text);
 
     return {
       text: text,
       changed: text !== rawText,
-      summary: summaryStr
+      summary: changes.length > 0 ? changes.join(' | ') : 'No fixes needed'
     };
   }
+
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -310,7 +281,58 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     return { text: out.join('\n'), fixed: fixedCount > 0 };
   }
 
+  // Ensure blank line before and after $$ ... $$ block math
+  fixEmptyLineAroundMath(text) {
+    let original = text;
+    // Add blank line before $$ if missing (but not if line above is already blank or is YAML ---)
+    text = text.replace(/([^\n])\n(\$\$)/g, '$1\n\n$2');
+    // Add blank line after closing $$ if next line is not blank
+    text = text.replace(/(\$\$)\n([^\n$])/g, '$1\n\n$2');
+    return { text, fixed: text !== original };
+  }
+
+  // Ensure blank line before and after ``` code fences
+  fixEmptyLineAroundCodeFences(text) {
+    let original = text;
+    const lines = text.split('\n');
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const isFence = line.trim().startsWith('```');
+      if (isFence) {
+        // Add blank line before fence if previous line is non-empty non-YAML
+        if (i > 0 && out.length > 0 && out[out.length - 1].trim() !== '' && !out[out.length - 1].startsWith('---')) {
+          out.push('');
+        }
+        out.push(line);
+        // Add blank line after fence if next line is non-empty
+        if (i + 1 < lines.length && lines[i + 1].trim() !== '') {
+          out.push('');
+        }
+      } else {
+        out.push(line);
+      }
+    }
+    const result = out.join('\n');
+    return { text: result, fixed: result !== original };
+  }
+
+  // Remove trailing whitespace from every line
+  fixTrailingSpaces(text) {
+    const original = text;
+    const result = text.split('\n').map(line => line.replace(/\s+$/, '')).join('\n');
+    return { text: result, fixed: result !== original };
+  }
+
+  // Collapse 3 or more consecutive blank lines into exactly 2
+  fixConsecutiveBlankLines(text) {
+    const original = text;
+    const result = text.replace(/\n{4,}/g, '\n\n\n');
+    return { text: result, fixed: result !== original };
+  }
+
   countPipes(str) {
+
     let count = 0;
     for (let i = 0; i < str.length; i++) {
       if (str[i] === '|' && (i === 0 || str[i - 1] !== '\\')) {
