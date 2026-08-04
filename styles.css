@@ -141,11 +141,49 @@ body {
 .markdown-source-view.mod-cm6 .cm-punctuation                { color: #abb2bf !important; }
 
 /* Header bar for the code fence begin/end lines */
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-begin,
-.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-end {
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-begin {
     background-color: var(--console-header) !important;
     color: #555 !important;
-    border-radius: var(--console-radius);
+    border-radius: var(--console-radius) var(--console-radius) 0 0;
+    position: relative;
+    padding-top: 1.2em;
+    padding-bottom: 0.5em;
+    border-bottom: 1px solid var(--console-border);
+}
+
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-end {
+    background-color: var(--console-bg) !important;
+    color: #555 !important;
+    border-radius: 0 0 var(--console-radius) var(--console-radius);
+    padding-bottom: 0.5em;
+}
+
+/* macOS-style dots for Live Preview */
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-begin::after {
+    content: '';
+    position: absolute;
+    top: 0.55em;
+    left: 0.9em;
+    width: 0.75em;
+    height: 0.75em;
+    border-radius: 50%;
+    background-color: var(--dot-red);
+    box-shadow:
+        1.2em 0 0 var(--dot-yellow),
+        2.4em 0 0 var(--dot-green);
+}
+
+/* Very subtle inline code styling for readability inside callouts */
+.markdown-rendered .callout code:not(pre code),
+.markdown-source-view.mod-cm6 .callout code:not(pre code) {
+    background-color: rgba(0, 0, 0, 0.04) !important;
+    color: inherit !important;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+.theme-dark .markdown-rendered .callout code:not(pre code),
+.theme-dark .markdown-source-view.mod-cm6 .callout code:not(pre code) {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.1);
 }
 
 /* ─── TABLES (APA-style textbook) ────────────────────────── */

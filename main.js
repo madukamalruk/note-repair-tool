@@ -192,24 +192,6 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const ytRes = this.fixYoutubeLinks(text);
     if (ytRes.fixed) { text = ytRes.text; changes.push('Converted YouTube links to embeds'); }
 
-    // ── Linter-inspired spacing rules ─────────────────────────────────────────
-
-    // 14. Blank line around $$ math blocks
-    const mathSpaceRes = this.fixEmptyLineAroundMath(text);
-    if (mathSpaceRes.fixed) { text = mathSpaceRes.text; changes.push('Spaced math blocks'); }
-
-    // 15. Blank line around ``` code fences
-    const codeSpaceRes = this.fixEmptyLineAroundCodeFences(text);
-    if (codeSpaceRes.fixed) { text = codeSpaceRes.text; changes.push('Spaced code fences'); }
-
-    // 16. Remove trailing whitespace from each line
-    const trailRes = this.fixTrailingSpaces(text);
-    if (trailRes.fixed) { text = trailRes.text; changes.push('Removed trailing spaces'); }
-
-    // 17. Collapse 3+ consecutive blank lines → max 2
-    const blankRes = this.fixConsecutiveBlankLines(text);
-    if (blankRes.fixed) { text = blankRes.text; changes.push('Collapsed excess blank lines'); }
-
     // 18. Global spacing pass (final polish)
     text = this.fixSpacing(text);
 
