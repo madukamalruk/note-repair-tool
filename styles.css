@@ -1,0 +1,40 @@
+/* 
+   Note Repair Tool - Custom Styles 
+   This file adds custom styling rules to Obsidian.
+*/
+
+/* Define console-like colors for code blocks */
+body {
+    --console-bg: #1e1e1e;
+    --console-text: #d4d4d4;
+}
+
+/* 1. Reading View Styling */
+/* Apply to all pre blocks except mermaid, tikz, math */
+.markdown-rendered pre:not(.language-mermaid):not(.language-tikz):not(.language-math) {
+    background-color: var(--console-bg) !important;
+    color: var(--console-text) !important;
+    border-radius: 8px;
+    padding: 1em;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    border: 1px solid #333;
+}
+
+.markdown-rendered pre:not(.language-mermaid):not(.language-tikz):not(.language-math) code {
+    background-color: transparent !important;
+    color: var(--console-text) !important;
+}
+
+/* 2. Live Preview Styling */
+/* Apply dark background to code block lines in editing mode */
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock {
+    background-color: var(--console-bg) !important;
+    color: var(--console-text) !important;
+}
+
+/* Optional: Make the backticks line dark too in Live Preview */
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-begin,
+.markdown-source-view.mod-cm6 .cm-line.HyperMD-codeblock-end {
+    background-color: #2d2d2d !important;
+    color: #888 !important;
+}
