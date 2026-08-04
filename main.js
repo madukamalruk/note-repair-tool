@@ -235,6 +235,14 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       summaryStr += 'Converted YouTube links to embeds';
     }
 
+    // 8. Code Block Languages
+    const codeLangRes = this.fixCodeBlockLanguages(text);
+    if (codeLangRes.fixed) {
+      text = codeLangRes.text;
+      if (summaryStr.length > 0) summaryStr += ', ';
+      summaryStr += 'Added syntax highlighting tags';
+    }
+
     return {
       text: text,
       changed: text !== rawText,
@@ -243,6 +251,19 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  fixCodeBlockLanguages(text) {
+    let originalText = text;
+    // Look for a language name followed by empty code block backticks.
+    text = text.replace(/Matlab\s*?\n+```\s*?\n/gi, 'Matlab\n\n```matlab\n');
+    text = text.replace(/Python\s*?\n+```\s*?\n/gi, 'Python\n\n```python\n');
+    text = text.replace(/C\+\+\s*?\n+```\s*?\n/gi, 'C++\n\n```cpp\n');
+    
+    // Sometimes slides say 'Code snippet' before matlab code in DSP
+    text = text.replace(/Code snippet\s*?\n+```\s*?\n/gi, 'Code snippet\n\n```matlab\n');
+
+    return { text: text, fixed: text !== originalText };
+  }
 
   countPipes(str) {
     let count = 0;
