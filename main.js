@@ -253,16 +253,61 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   fixCodeBlockLanguages(text) {
-    let originalText = text;
-    // Look for a language name followed by empty code block backticks.
-    text = text.replace(/Matlab\s*?\n+```\s*?\n/gi, 'Matlab\n\n```matlab\n');
-    text = text.replace(/Python\s*?\n+```\s*?\n/gi, 'Python\n\n```python\n');
-    text = text.replace(/C\+\+\s*?\n+```\s*?\n/gi, 'C++\n\n```cpp\n');
-    
-    // Sometimes slides say 'Code snippet' before matlab code in DSP
-    text = text.replace(/Code snippet\s*?\n+```\s*?\n/gi, 'Code snippet\n\n```matlab\n');
+    let lines = text.split('\n');
+    let out = [];
+    let fixedCount = 0;
 
-    return { text: text, fixed: text !== originalText };
+    // Mermaid diagram first-line keywords
+    const mermaidKeywords = /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|stateDiagram-v2|gantt|pie|erDiagram|journey|gitGraph|mindmap|timeline|quadrantChart|xychart-beta)/i;
+    // TikZ / LaTeX diagram indicators
+    const tikzKeywords = /^\\begin\{tikzpicture\}|^\\begin\{circuitikz\}/i;
+
+    // Labels that hint the following code block is Matlab
+    const matlabLabelRegex = /^(Matlab|Code snippet)$/i;
+    // Labels that hint Python
+    const pythonLabelRegex = /^Python$/i;
+    // Labels that hint C/C++
+    const cppLabelRegex = /^C\+\+$/i;
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+
+      // Check if current line is a language hint label
+      let hintedLang = null;
+      if (matlabLabelRegex.test(line.trim())) hintedLang = 'matlab';
+      else if (pythonLabelRegex.test(line.trim())) hintedLang = 'python';
+      else if (cppLabelRegex.test(line.trim())) hintedLang = 'cpp';
+
+      if (hintedLang !== null) {
+        // Find the next non-empty line
+        let nextIdx = i + 1;
+        while (nextIdx < lines.length && lines[nextIdx].trim() === '') nextIdx++;
+
+        // Check if the next non-empty line opens an untagged code block
+        if (nextIdx < lines.length && lines[nextIdx].trim() === '```') {
+          // Peek at the first content line of the block to detect mermaid/tikz
+          let contentIdx = nextIdx + 1;
+          let firstContent = contentIdx < lines.length ? lines[contentIdx].trim() : '';
+
+          if (mermaidKeywords.test(firstContent)) {
+            // It's a mermaid diagram — tag as mermaid, not matlab
+            lines[nextIdx] = '```mermaid';
+            fixedCount++;
+          } else if (tikzKeywords.test(firstContent)) {
+            // It's a TikZ diagram — leave untagged (tikzjax needs no tag)
+            // do nothing
+          } else {
+            // Safe to apply the hinted language
+            lines[nextIdx] = '```' + hintedLang;
+            fixedCount++;
+          }
+        }
+      }
+
+      out.push(line);
+    }
+
+    return { text: out.join('\n'), fixed: fixedCount > 0 };
   }
 
   countPipes(str) {
