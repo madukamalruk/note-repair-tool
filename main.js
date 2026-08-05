@@ -963,15 +963,17 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
               newCode = `\n${p}\\usepackage{circuitikz}\n${p}\\usepackage{amsmath}\n${p}\\usetikzlibrary{decorations.markings}\n${p}\\begin{document}\n${p}\\begin{${envName}}${envContent}${envEnd}\n${p}\\end{document}\n${p}`;
           } else {
               // Replace the content inside the environment, preserving the rest of the code
+              // Since `code` already contains the original prefixes, we don't need to re-apply them.
               newCode = code.replace(envMatch[2], envContent);
-              // Ensure prefix is applied properly to all lines if it isn't already
-              newCode = '\n' + newCode.split('\n').map(l => l.startsWith(p) ? l : p + l).join('\n') + '\n' + p;
           }
           
           let replacement = `${p}\`\`\`tikz${newCode}\`\`\``;
           
-          // Clean up any double prefixes that might have occurred
-          replacement = replacement.replace(new RegExp(`^${p}${p}`, 'gm'), p);
+          // Clean up any double prefixes that might have occurred from previous versions
+          if (p) replacement = replacement.replace(new RegExp(`^${p}${p}`, 'gm'), p);
+          
+          // Clean up growing blank lines that might have occurred from previous versions
+          if (p) replacement = replacement.replace(new RegExp(`\n${p}\\s*\n${p}\\s*\n`, 'g'), `\n${p}\n`);
           
           if (match !== replacement) {
               fixedCount++;
