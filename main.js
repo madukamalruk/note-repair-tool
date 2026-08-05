@@ -788,17 +788,13 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       let isMindmap = code.trim().startsWith('mindmap');
 
       let fixedLines = lines.map(line => {
-        // V3 Fix: Strip trailing invisible characters (like spaces after quotes) 
-        // which cause "Expecting 'SPACELINE', 'NL', 'EOF', got 'NODE_ID'" parsing errors in Mermaid
         let l = line.trimEnd();
 
-        // V5 Fix: Obsidian escapes quotes in mindmap diagrams to &quot; causing render errors
         if (isMindmap && l.includes('"')) {
           l = l.replace(/"/g, '');
           fixedCount++;
         }
 
-        // V6 Fix: Replace bare + and - and "+", "-" nodes to avoid rendering as lists in Obsidian
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*"?\+"?\s*\)\)/g, '$1(("Add"))');
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*"?\-"?\s*\)\)/g, '$1(("Sub"))');
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*([\+\-\*\/])\s*\)\)/g, '$1(("$2"))');
@@ -811,46 +807,43 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         });
 
         if (l.includes('\\cdot') || l.includes('\\times') || l.includes('\\frac')) {
-          l = l.replace(/\\cdot/g, '·');
-          l = l.replace(/\\times/g, '×');
+          l = l.replace(/\\cdot/g, '\u00B7');
+          l = l.replace(/\\times/g, '\u00D7');
           l = l.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '$1/$2');
           fixedCount++;
         }
 
-        // V4 Fix: Prevent Obsidian from rendering "Unsupported markdown: list" when a node starts with "1. "
         if (l.match(/\["\d+\.\s/)) {
           l = l.replace(/\["(\d+)\.\s/g, '["($1) ');
           fixedCount++;
         }
 
-        // V7 Fix: Replace invalid left-pointing arrows (<--) by swapping nodes and using -->
         if (l.includes('<--') && !l.includes('<-->')) {
           l = l.replace(/^(\s*)([a-zA-Z0-9_]+(?:\[.*?\]|\(\(.*?\)\)|\(.*?\))?)\s*<--\s*([a-zA-Z0-9_]+(?:\[.*?\]|\(\(.*?\)\)|\(.*?\))?)(.*)$/, '$1$3 --> $2$4');
           fixedCount++;
         }
 
-        // V8 Fix: Repair broken math in Mermaid (Obsidian Mermaid doesn't support MathJax without specific syntax)
         if (l.includes('math:')) {
           l = l.replace(/math:\s*/g, '');
           fixedCount++;
         }
         if (l.includes('mathcal{F}')) {
-          l = l.replace(/\\?mathcal\{F\}/g, 'ℱ');
+          l = l.replace(/\\?mathcal\{F\}/g, '\u2131');
           fixedCount++;
         }
         if (l.includes('z?1')) {
-          l = l.replace(/z\?1/g, 'z⁻¹');
+          l = l.replace(/z\?1/g, 'z\u207B\u00B9');
           fixedCount++;
         }
         if (l.includes('geq')) {
-          l = l.replace(/\\?geq/g, '≥');
+          l = l.replace(/\\?geq/g, '\u2265');
           fixedCount++;
         }
 
         return l;
       });
 
-      return '```mermaid\n' + fixedLines.filter(fl => fl !== '').join('\n') + '\n```';
+      return '```mermaid' + fixedLines.join('\n') + '```';
     });
 
     return { text: fixedText, fixedCount };
