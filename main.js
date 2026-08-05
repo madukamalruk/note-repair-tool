@@ -886,7 +886,15 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         return injectedLine + prefix + l;
       });
 
-      return '```mermaid' + fixedLines.join('\n') + '```';
+      // V16 FIX: If the code was inside a blockquote/callout (lines start with "> "),
+      // the closing ``` must ALSO have the same prefix.
+      // Without this, Obsidian sees a bare ``` and opens a NEW code block for everything below.
+      let blockPrefix = '';
+      for (let line of lines) {
+        let m = line.match(/^([\s>]+)/);
+        if (m && m[1].trim() !== '') { blockPrefix = m[1]; break; }
+      }
+      return '```mermaid' + fixedLines.join('\n') + '\n' + blockPrefix + '```';
     });
 
     return { text: fixedText, fixedCount };
