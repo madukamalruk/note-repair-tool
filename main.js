@@ -814,8 +814,9 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
         let injectedLine = '';
         if (!injectedInit && !isMindmap) {
-          // V11 Fix: Inject transparent edge label background to prevent white boxes cutting lines
-          injectedLine = prefix + '%%{init: {"themeVariables": {"edgeLabelBackground": "transparent"}}}%%\n';
+          // V14 Fix: Instead of edgeLabelBackground which Mermaid converts to black (#000000) by dropping the alpha channel,
+          // we inject raw CSS to force the rect and span backgrounds to be transparent, keeping text legible.
+          injectedLine = prefix + '%%{init: {"themeCSS": ".edgeLabel rect { fill: transparent !important; } .edgeLabel span { background-color: transparent !important; }"}}%%\n';
           injectedInit = true;
           fixedCount++;
         }
