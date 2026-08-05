@@ -785,16 +785,32 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
     let fixedText = text.replace(mermaidRegex, (match, code) => {
       let lines = code.split('\n');
-      let isMindmap = code.trim().startsWith('mindmap');
+      
+      // Check if it's a mindmap by looking at the first non-empty line after stripping prefixes
+      let cleanCode = code.replace(/^[\s>]+/gm, '').trim();
+      let isMindmap = cleanCode.startsWith('mindmap');
 
       let fixedLines = lines.map(line => {
-        let l = line.trimEnd();
+        // Separate the blockquote/indentation prefix from the actual Mermaid code
+        let prefixMatch = line.match(/^([\s>]*)/);
+        let prefix = prefixMatch ? prefixMatch[1] : '';
+        let l = line.substring(prefix.length).trimEnd();
+
+        // Skip completely empty lines (only whitespace/prefixes)
+        if (l === '') return line;
+
+        // V9 Fix: Strip out %%{init}%% theme configurations that force white text on white backgrounds
+        if (l.startsWith('%%{init')) {
+          fixedCount++;
+          return prefix; // Leave just the prefix (essentially an empty line)
+        }
 
         if (isMindmap && l.includes('"')) {
           l = l.replace(/"/g, '');
           fixedCount++;
         }
 
+        // Fix bare +/- nodes
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*"?\+"?\s*\)\)/g, '$1(("Add"))');
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*"?\-"?\s*\)\)/g, '$1(("Sub"))');
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*([\+\-\*\/])\s*\)\)/g, '$1(("$2"))');
@@ -806,6 +822,19 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           return `-->|"${trimmed}"|`;
         });
 
+        // V10 Fix: Unquoted node labels with square brackets (e.g. Input[x[n]]) cause SQS parsing errors
+        if (l.match(/([a-zA-Z0-9_]+)\[([^"\]]*\[[^\]]*\][^"\]]*)\]/)) {
+          l = l.replace(/([a-zA-Z0-9_]+)\[([^"\]]*\[[^\]]*\][^"\]]*)\]/g, '$1["$2"]');
+          fixedCount++;
+        }
+
+        // V10 Fix: Empty node labels (e.g. Branch[ ]) cause SQS parsing errors
+        if (l.match(/([a-zA-Z0-9_]+)\[(\s+)\]/)) {
+          l = l.replace(/([a-zA-Z0-9_]+)\[(\s+)\]/g, '$1["$2"]');
+          fixedCount++;
+        }
+
+        // Math/LaTeX fixes
         if (l.includes('\\cdot') || l.includes('\\times') || l.includes('\\frac')) {
           l = l.replace(/\\cdot/g, '\u00B7');
           l = l.replace(/\\times/g, '\u00D7');
@@ -819,7 +848,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         }
 
         if (l.includes('<--') && !l.includes('<-->')) {
-          l = l.replace(/^(\s*)([a-zA-Z0-9_]+(?:\[.*?\]|\(\(.*?\)\)|\(.*?\))?)\s*<--\s*([a-zA-Z0-9_]+(?:\[.*?\]|\(\(.*?\)\)|\(.*?\))?)(.*)$/, '$1$3 --> $2$4');
+          l = l.replace(/^([a-zA-Z0-9_]+(?:\[.*?\]|\(\(.*?\)\)|\(.*?\))?)\s*<--\s*([a-zA-Z0-9_]+(?:\[.*?\]|\(\(.*?\)\)|\(.*?\))?)(.*)$/, '$2 --> $1$3');
           fixedCount++;
         }
 
@@ -840,7 +869,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           fixedCount++;
         }
 
-        return l;
+        return prefix + l;
       });
 
       return '```mermaid' + fixedLines.join('\n') + '```';
