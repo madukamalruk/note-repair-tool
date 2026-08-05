@@ -829,6 +829,24 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           fixedCount++;
         }
 
+        // V8 Fix: Repair broken math in Mermaid (Obsidian Mermaid doesn't support MathJax without specific syntax)
+        if (l.includes('math:')) {
+          l = l.replace(/math:\s*/g, '');
+          fixedCount++;
+        }
+        if (l.includes('mathcal{F}')) {
+          l = l.replace(/\\?mathcal\{F\}/g, 'ℱ');
+          fixedCount++;
+        }
+        if (l.includes('z?1')) {
+          l = l.replace(/z\?1/g, 'z⁻¹');
+          fixedCount++;
+        }
+        if (l.includes('geq')) {
+          l = l.replace(/\\?geq/g, '≥');
+          fixedCount++;
+        }
+
         return l;
       });
 
