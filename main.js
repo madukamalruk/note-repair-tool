@@ -569,13 +569,15 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
                   cells.push(...this.splitCells(nextTClean));
                 } else {
                   let newParts = this.splitCells(nextTClean);
-                  if (cells.length > 0) {
-                    cells[cells.length - 1] += ' ' + newParts[0];
-                    if (newParts.length > 1) {
-                      cells.push(...newParts.slice(1));
+                  if (newParts.length > 0) {
+                    if (cells.length > 0) {
+                      cells[cells.length - 1] += ' ' + newParts[0];
+                      if (newParts.length > 1) {
+                        cells.push(...newParts.slice(1));
+                      }
+                    } else {
+                      cells.push(...newParts);
                     }
-                  } else {
-                    cells.push(...newParts);
                   }
                 }
                 
@@ -606,11 +608,13 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
                 if (cleanNext.startsWith('<br>')) cleanNext = cleanNext.replace(/^<br\s*\/?>/i, '').trim();
                 
                 let parts = this.splitCells(cleanNext);
-                if (cells.length > 0) {
-                  cells[cells.length - 1] += ' ' + parts[0];
-                  if (parts.length > 1) cells.push(...parts.slice(1));
-                } else {
-                  cells.push(...parts);
+                if (parts.length > 0) {
+                  if (cells.length > 0) {
+                    cells[cells.length - 1] += ' ' + parts[0];
+                    if (parts.length > 1) cells.push(...parts.slice(1));
+                  } else {
+                    cells.push(...parts);
+                  }
                 }
                 
                 rowBuffer = p3 + '| ' + cells.join(' | ') + ' |';
