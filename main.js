@@ -182,13 +182,11 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
     // 10. TikZ package injection
     const tikzRes = this.fixTikz(text);
-    text = tikzRes.text;
-    if (tikzRes.fixedCount > 0) totalFixed += tikzRes.fixedCount;
+    if (tikzRes.fixedCount > 0) { text = tikzRes.text; changes.push('Fixed TikZ diagrams'); }
 
+    // 10b. Collapsed Math arrays (e.g. \cline inside blockquotes collapsed to one line)
     const collapsedMathRes = this.fixCollapsedMath(text);
-    text = collapsedMathRes.text;
-    if (collapsedMathRes.fixedCount > 0) totalFixed += collapsedMathRes.fixedCount; 
-    if (totalFixed > 0) changes.push('Fixed TikZ diagrams'); 
+    if (collapsedMathRes.fixedCount > 0) { text = collapsedMathRes.text; changes.push('Repaired collapsed LaTeX math arrays'); }
 
     // 11. Bold marker repair
     const boldRes = this.fixBoldFormatting(text);
