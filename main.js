@@ -182,7 +182,13 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
     // 10. TikZ package injection
     const tikzRes = this.fixTikz(text);
-    if (tikzRes.fixedCount > 0) { text = tikzRes.text; changes.push('Fixed TikZ diagrams'); }
+    text = tikzRes.text;
+    if (tikzRes.fixedCount > 0) totalFixed += tikzRes.fixedCount;
+
+    const collapsedMathRes = this.fixCollapsedMath(text);
+    text = collapsedMathRes.text;
+    if (collapsedMathRes.fixedCount > 0) totalFixed += collapsedMathRes.fixedCount; 
+    if (totalFixed > 0) changes.push('Fixed TikZ diagrams'); 
 
     // 11. Bold marker repair
     const boldRes = this.fixBoldFormatting(text);
@@ -925,9 +931,6 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     let tikzRegex = /^([ \t>]*?)```tikz([\s\S]*?)```/gm;
 
     let fixedText = text.replace(tikzRegex, (match, prefix, code) => {
-      let originalCode = code;
-      
-      // The obsidian-tikzjax plugin (artisticat1 fork) requires \begin{document}
       let envMatch = code.match(/\\begin\{(tikzpicture|circuitikz)\}([\s\S]*?)(\\end\{\1\})/);
       
       if (envMatch) {
@@ -935,16 +938,39 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           let envContent = envMatch[2];
           let envEnd = envMatch[3];
           
-          // Fix unsupported pattern attribute by replacing it with a solid fill
-          envContent = envContent.replace(/pattern=[^,\]]+/g, 'fill=gray!50');
+          // V12 Fix: TikZJax doesn't support the patterns library. 
+          // Remove any pattern or pattern color attributes to prevent broken images.
+          if (envContent.includes('pattern')) {
+              envContent = envContent.replace(/pattern[a-zA-Z\s]*=[^,\]]+/g, '');
+              // Clean up any trailing/duplicate commas left behind
+              envContent = envContent.replace(/,\s*,/g, ',');
+              envContent = envContent.replace(/\[\s*,/g, '[');
+              envContent = envContent.replace(/,\s*\]/g, ']');
+          }
           
           // Fix unsupported tdplot_main_coords (tikz-3dplot) by replacing with explicit 3D axes
           envContent = envContent.replace(/tdplot_main_coords/g, 'x={(-0.5cm,-0.4cm)}, y={(1cm,0cm)}, z={(0cm,1cm)}');
           
           let p = prefix ? prefix : '';
-          let newCode = `\n${p}\\usepackage{circuitikz}\n${p}\\usepackage{amsmath}\n${p}\\usetikzlibrary{decorations.markings}\n${p}\\begin{document}\n${p}\\begin{${envName}}${envContent}${envEnd}\n${p}\\end{document}\n${p}`;
+          
+          // V12 Fix: Preserve the user's original preamble if it exists. 
+          // Only inject the hardcoded preamble if \begin{document} is completely missing.
+          let hasPreamble = code.includes('\\begin{document}');
+          let newCode = '';
+          
+          if (!hasPreamble) {
+              newCode = `\n${p}\\usepackage{circuitikz}\n${p}\\usepackage{amsmath}\n${p}\\usetikzlibrary{decorations.markings}\n${p}\\begin{document}\n${p}\\begin{${envName}}${envContent}${envEnd}\n${p}\\end{document}\n${p}`;
+          } else {
+              // Replace the content inside the environment, preserving the rest of the code
+              newCode = code.replace(envMatch[2], envContent);
+              // Ensure prefix is applied properly to all lines if it isn't already
+              newCode = '\n' + newCode.split('\n').map(l => l.startsWith(p) ? l : p + l).join('\n') + '\n' + p;
+          }
           
           let replacement = `${p}\`\`\`tikz${newCode}\`\`\``;
+          
+          // Clean up any double prefixes that might have occurred
+          replacement = replacement.replace(new RegExp(`^${p}${p}`, 'gm'), p);
           
           if (match !== replacement) {
               fixedCount++;
@@ -955,6 +981,20 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       return match;
     });
 
+    return { text: fixedText, fixedCount };
+  }
+
+  fixCollapsedMath(text) {
+    let fixedCount = 0;
+    // V13 Fix: Sometimes copy-pasting collapses LaTeX array environments inside blockquotes into a single line with literal ' > ' separators.
+    // e.g. \begin{array}{r|l} >  & 1 ... \cline{2-2} > ...
+    let fixedText = text.replace(/\\begin\{(array|pmatrix|bmatrix|vmatrix|cases)\}([\s\S]*?)\\end\{\1\}/g, (match) => {
+        if (match.includes(' > ')) {
+            fixedCount++;
+            return match.replace(/ > /g, '\n> ');
+        }
+        return match;
+    });
     return { text: fixedText, fixedCount };
   }
 
