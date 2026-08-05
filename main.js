@@ -889,6 +889,9 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           // Fix unsupported pattern attribute by replacing it with a solid fill
           envContent = envContent.replace(/pattern=[^,\]]+/g, 'fill=gray!50');
           
+          // Fix unsupported tdplot_main_coords (tikz-3dplot) by replacing with explicit 3D axes
+          envContent = envContent.replace(/tdplot_main_coords/g, 'x={(-0.5cm,-0.4cm)}, y={(1cm,0cm)}, z={(0cm,1cm)}');
+          
           let p = prefix ? prefix : '';
           let newCode = `\n${p}\\usepackage{circuitikz}\n${p}\\usepackage{amsmath}\n${p}\\usetikzlibrary{decorations.markings}\n${p}\\begin{document}\n${p}\\begin{${envName}}${envContent}${envEnd}\n${p}\\end{document}\n${p}`;
           
