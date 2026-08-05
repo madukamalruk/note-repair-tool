@@ -789,6 +789,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       // Check if it's a mindmap by looking at the first non-empty line after stripping prefixes
       let cleanCode = code.replace(/^[\s>]+/gm, '').trim();
       let isMindmap = cleanCode.startsWith('mindmap');
+      let injectedInit = false;
 
       let fixedLines = lines.map(line => {
         // Separate the blockquote/indentation prefix from the actual Mermaid code
@@ -799,10 +800,18 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         // Skip completely empty lines (only whitespace/prefixes)
         if (l === '') return line;
 
-        // V9 Fix: Strip out %%{init}%% theme configurations that force white text on white backgrounds
+        // V9 Fix: Strip out existing %%{init}%% theme configurations
         if (l.startsWith('%%{init')) {
           fixedCount++;
           return prefix; // Leave just the prefix (essentially an empty line)
+        }
+
+        let injectedLine = '';
+        if (!injectedInit && !isMindmap) {
+          // V11 Fix: Inject transparent edge label background to prevent white boxes cutting lines
+          injectedLine = prefix + '%%{init: {"themeVariables": {"edgeLabelBackground": "transparent"}}}%%\n';
+          injectedInit = true;
+          fixedCount++;
         }
 
         if (isMindmap && l.includes('"')) {
@@ -869,7 +878,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           fixedCount++;
         }
 
-        return prefix + l;
+        return injectedLine + prefix + l;
       });
 
       return '```mermaid' + fixedLines.join('\n') + '```';
