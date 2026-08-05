@@ -148,6 +148,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const yamlRes = this.fixYaml(text);
     if (yamlRes.fixed) { text = yamlRes.text; changes.push('Fixed YAML Frontmatter'); }
 
+    // 2.5 Horizontal Rules (prevent Setext H2 issues with tables)
+    const hrRes = this.fixHorizontalRules(text);
+    if (hrRes.fixed) { text = hrRes.text; changes.push('Spaced horizontal rules'); }
+
     // 3. Tables (ONE pass only — bug fix: was running twice)
     const tableRes = this.fixTables(text);
     if (tableRes.mergedRows > 0) { text = tableRes.text; changes.push(`Merged ${tableRes.mergedRows} split table rows`); }
@@ -261,6 +265,43 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     }
 
     return { text: out.join('\n'), fixed: fixedCount > 0 };
+  }
+
+  // Ensure blank line before and after --- to prevent it from turning previous lines into H2
+  fixHorizontalRules(text) {
+    const original = text;
+    const lines = text.split('\n');
+    const out = [];
+    let inYaml = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const t = line.trim();
+      
+      if (i === 0 && t === '---') {
+        inYaml = true;
+        out.push(line);
+        continue;
+      }
+      if (inYaml && t === '---') {
+        inYaml = false;
+        out.push(line);
+        continue;
+      }
+      
+      if (!inYaml && t === '---') {
+        if (out.length > 0 && out[out.length - 1].trim() !== '') {
+          out.push(''); // Blank line before
+        }
+        out.push(line);
+        if (i + 1 < lines.length && lines[i + 1].trim() !== '') {
+          out.push(''); // Blank line after
+        }
+      } else {
+        out.push(line);
+      }
+    }
+    const result = out.join('\n');
+    return { text: result, fixed: result !== original };
   }
 
   // Ensure blank line before and after $$ ... $$ block math
@@ -491,7 +532,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
             let { prefix: p3, content: c3 } = this.extractPrefix(currLine);
             let t = c3.trim();
 
-            if (t.startsWith('#') || t.startsWith('```') || t.startsWith('---')) break;
+            if (p3 !== p1 || t.startsWith('#') || t.startsWith('```') || t.startsWith('---')) break;
 
             if (!t.startsWith('|') && !t.includes('|') && t !== '') break;
 
@@ -515,7 +556,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
               let nextExt = this.extractPrefix(nextL);
               let nextT = nextExt.content.trim();
               
-              if (nextT.startsWith('#') || nextT.startsWith('```') || nextT.startsWith('---')) break;
+              if (nextExt.prefix !== p1 || nextT.startsWith('#') || nextT.startsWith('```') || nextT.startsWith('---')) break;
               
               if (nextT !== '') {
                 let nextTClean = nextT.replace(/<br\s*\/?>$/i, '').trim();
@@ -549,6 +590,8 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
               let checkNextLine = lines[j];
               let checkNextExt = this.extractPrefix(checkNextLine);
               let checkNext = checkNextExt.content.trim();
+              
+              if (checkNextExt.prefix !== p1) break;
               
               if (checkNext === '') {
                 let peek2 = lines[j + 1] ? this.extractPrefix(lines[j + 1]).content.trim() : '';
@@ -773,6 +816,12 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         // V4 Fix: Prevent Obsidian from rendering "Unsupported markdown: list" when a node starts with "1. "
         if (l.match(/\["\d+\.\s/)) {
           l = l.replace(/\["(\d+)\.\s/g, '["($1) ');
+          fixedCount++;
+        }
+
+        // V7 Fix: Replace invalid left-pointing arrows (<--) by swapping nodes and using -->
+        if (l.includes('<--') && !l.includes('<-->')) {
+          l = l.replace(/^(\s*)([a-zA-Z0-9_]+(?:\[.*?\]|\(\(.*?\)\)|\(.*?\))?)\s*<--\s*([a-zA-Z0-9_]+(?:\[.*?\]|\(\(.*?\)\)|\(.*?\))?)(.*)$/, '$1$3 --> $2$4');
           fixedCount++;
         }
 
