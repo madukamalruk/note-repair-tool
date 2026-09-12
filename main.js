@@ -881,6 +881,12 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*"?\-"?\s*\)\)/g, '$1(("Sub"))');
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*([\+\-\*\/])\s*\)\)/g, '$1(("$2"))');
 
+        // V20 Fix: LLMs sometimes generate unicode arrows (→) which cause Lexical errors
+        if (l.includes('→')) {
+          l = l.replace(/→/g, '-->');
+          fixedCount++;
+        }
+
         l = l.replace(/-->\s*\|([^"|\n]+)\|/g, (m, label) => {
           let trimmed = label.trim();
           if (trimmed.startsWith('"') && trimmed.endsWith('"')) return m;
