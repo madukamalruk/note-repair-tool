@@ -200,6 +200,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const ytRes = this.fixYoutubeLinks(text);
     if (ytRes.fixed) { text = ytRes.text; changes.push('Converted YouTube links to embeds'); }
 
+    // 14. Fix functionplot/chart blocks broken by previous hr fix
+    const functionplotRes = this.fixFunctionPlotBlocks(text);
+    if (functionplotRes.fixed) { text = functionplotRes.text; changes.push('Fixed graph code blocks'); }
+
     // 18. Global spacing pass (final polish)
     text = this.fixSpacing(text);
 
@@ -210,8 +214,25 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     };
   }
 
-
   // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  fixFunctionPlotBlocks(text) {
+    let original = text;
+    // Remove blank lines immediately after ```functionplot and before ---
+    text = text.replace(/```functionplot\s*\n\s*\n\s*---/g, '```functionplot\n---');
+    
+    // In functionplot blocks, we want to remove the blank lines around --- if they were added.
+    // It's safer to just do a targeted replace for this specific block type.
+    text = text.replace(/```functionplot([\s\S]*?)```/g, (match, inner) => {
+      // Remove blank lines before and after ---
+      let newInner = inner.replace(/\n\s*\n\s*---\s*\n\s*\n/g, '\n---\n');
+      newInner = newInner.replace(/^\s*\n\s*---\s*\n\s*\n/g, '---\n');
+      newInner = newInner.replace(/\n\s*\n\s*---$/g, '\n---');
+      return '```functionplot' + newInner + '```';
+    });
+    
+    return { text, fixed: text !== original };
+  }
 
   fixCodeBlockLanguages(text) {
     let lines = text.split('\n');
