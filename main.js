@@ -277,9 +277,21 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const lines = text.split('\n');
     const out = [];
     let inYaml = false;
+    let inCodeBlock = false;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const t = line.trim();
+
+      // Track code fences — never modify anything inside a code block
+      if (t.startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+        out.push(line);
+        continue;
+      }
+      if (inCodeBlock) {
+        out.push(line);
+        continue;
+      }
       
       if (i === 0 && t === '---') {
         inYaml = true;
