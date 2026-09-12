@@ -218,16 +218,25 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
   fixFunctionPlotBlocks(text) {
     let original = text;
+    // Auto-heal the bug from V17 that squashed them into ```functionplot---
+    // Capture any blockquote prefix (like "> ") to ensure the new line keeps it.
+    text = text.replace(/^([\t >]*)```functionplot\s*---/gm, '$1```functionplot\n$1---');
+
     // Remove blank lines immediately after ```functionplot and before ---
-    text = text.replace(/```functionplot\s*\n\s*\n\s*---/g, '```functionplot\n---');
+    text = text.replace(/^([\t >]*)```functionplot\s*\n\s*\n\s*---/gm, '$1```functionplot\n$1---');
     
     // In functionplot blocks, we want to remove the blank lines around --- if they were added.
-    // It's safer to just do a targeted replace for this specific block type.
     text = text.replace(/```functionplot([\s\S]*?)```/g, (match, inner) => {
       // Remove blank lines before and after ---
       let newInner = inner.replace(/\n\s*\n\s*---\s*\n\s*\n/g, '\n---\n');
-      newInner = newInner.replace(/^\s*\n\s*---\s*\n\s*\n/g, '---\n');
-      newInner = newInner.replace(/\n\s*\n\s*---$/g, '\n---');
+      
+      // If it starts with space/newline then --- then space/newline, normalize to just \n---\n
+      newInner = newInner.replace(/^\s*---\s*\n\s*\n/g, '\n---\n');
+      newInner = newInner.replace(/^\s*---\s*\n/g, '\n---\n');
+      
+      // If it ends with ---
+      newInner = newInner.replace(/\n\s*\n\s*---\s*$/g, '\n---\n');
+      
       return '```functionplot' + newInner + '```';
     });
     
