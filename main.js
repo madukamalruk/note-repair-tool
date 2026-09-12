@@ -237,6 +237,16 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       // If it ends with ---
       newInner = newInner.replace(/\n\s*\n\s*---\s*$/g, '\n---\n');
       
+      // V19 Fix: The functionplot plugin uses math.js, which crashes if it encounters '#' comments
+      // in the function definition section. We must strip out these comments so curves render.
+      // E.g., `# E field (0 inside)` -> removed
+      let lines = newInner.split('\n');
+      let cleanedLines = lines.filter(line => {
+        let trimmed = line.replace(/^[\t >]*/, '').trim();
+        return !trimmed.startsWith('#');
+      });
+      newInner = cleanedLines.join('\n');
+      
       return '```functionplot' + newInner + '```';
     });
     
