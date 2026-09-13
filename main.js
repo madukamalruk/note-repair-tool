@@ -244,6 +244,11 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       let cleanedLines = lines.filter(line => {
         let trimmed = line.replace(/^[\t >]*/, '').trim();
         return !trimmed.startsWith('#');
+      }).map(line => {
+        // V21 Fix: obsidian-functionplot parses functions by splitting the line by '=' (e.g. `f(x) = ...`).
+        // If the expression contains `<=` or `>=`, it gets split incorrectly (e.g. `x <` and ` 1`), breaking the plot.
+        // We replace `<=` with `< ` and `>=` with `> ` to prevent this parser crash.
+        return line.replace(/<=/g, '< ').replace(/>=/g, '> ');
       });
       newInner = cleanedLines.join('\n');
       
