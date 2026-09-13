@@ -237,23 +237,50 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       // If it ends with ---
       newInner = newInner.replace(/\n\s*\n\s*---\s*$/g, '\n---\n');
       
-      // V19 Fix: The functionplot plugin uses math.js, which crashes if it encounters '#' comments
-      // in the function definition section. We must strip out these comments so curves render.
-      // E.g., `# E field (0 inside)` -> removed
-      let lines = newInner.split('\n');
-      let cleanedLines = lines.filter(line => {
-        let trimmed = line.replace(/^[\t >]*/, '').trim();
-        return !trimmed.startsWith('#');
-      }).map(line => {
-        // V21 Fix: obsidian-functionplot parses functions by splitting the line by '=' (e.g. `f(x) = ...`).
-        // If the expression contains `<=` or `>=`, it gets split incorrectly (e.g. `x <` and ` 1`), breaking the plot.
-        // We replace `<=` with `< ` and `>=` with `> ` to prevent this parser crash.
-        return line.replace(/<=/g, '< ').replace(/>=/g, '> ');
+        // V19 & V21 & V22 Fixes: Clean up the function section (everything after the second ---)
+        let parts = newInner.split('---');
+        if (parts.length >= 3) {
+          // parts[0] is before first ---, parts[1] is YAML, parts[2] and beyond is the function section
+          let funcSection = parts.slice(2).join('---');
+          
+          let lines = funcSection.split('\n');
+          let fIndex = 0;
+          let funcLetters = 'fghpqrst';
+          
+          let cleanedLines = lines.filter(line => {
+            let trimmed = line.replace(/^[\t >]*/, '').trim();
+            // Remove comments and hallucinated 'color: red' lines which crash the parser
+            if (trimmed.startsWith('#') || trimmed.startsWith('//')) return false;
+            if (trimmed.match(/^color\s*:/i)) return false;
+            return true;
+          }).map(line => {
+            // V21 Fix: Prevent parser crash on `<=` and `>=`
+            let modLine = line.replace(/<=/g, '< ').replace(/>=/g, '> ');
+            
+            // V22 Fix: LLMs hallucinate `fn: sin(x)` or `y = sin(x)`. Convert to `f(x) = sin(x)`.
+            let trimmed = modLine.replace(/^[\t >]*/, '').trim();
+            if (trimmed.match(/^fn\s*:/i) || trimmed.match(/^y\s*=/i)) {
+               let expr = trimmed.replace(/^(fn\s*:|y\s*=)\s*/i, '');
+               let prefix = modLine.substring(0, modLine.indexOf(trimmed)); // keep blockquote prefix
+               let letter = funcLetters[fIndex % funcLetters.length];
+               fIndex++;
+               return prefix + letter + '(x) = ' + expr;
+            }
+            
+            // Increment fIndex if it's already a valid function like g(x) =
+            if (trimmed.match(/^[a-zA-Z]\(x\)\s*=/)) {
+               fIndex++;
+            }
+            
+            return modLine;
+          });
+          
+          parts[2] = cleanedLines.join('\n');
+          newInner = parts[0] + '---' + parts[1] + '---' + parts.slice(2).join('---');
+        }
+        
+        return '```functionplot' + newInner + '```';
       });
-      newInner = cleanedLines.join('\n');
-      
-      return '```functionplot' + newInner + '```';
-    });
     
     return { text, fixed: text !== original };
   }
