@@ -545,13 +545,19 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
   }
 
   fixTables(text) {
+      let mergedRows = 0;
+      let originalText = text;
+
       // V23 Fix: LLMs sometimes line-wrap trailing pipes in blockquotes as `\n>\n>  |`
       text = text.replace(/(\|[ \t]*)\r?\n>[ \t]*\r?\n>[ \t]*\|[ \t]*(?=\r?\n|$)/g, '$1');
       text = text.replace(/\r?\n>[ \t]*\r?\n>[ \t]*\|[ \t]*(?=\r?\n|$)/g, ' |');
+      
+      if (text !== originalText) {
+          mergedRows++; // Ensure changes are saved
+      }
 
       let lines = text.split(/\r?\n/);
     let out = [];
-    let mergedRows = 0;
     let i = 0;
 
     while (i < lines.length) {
