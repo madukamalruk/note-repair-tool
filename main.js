@@ -1073,6 +1073,11 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
               newCode = code.replace(envMatch[2], envContent);
           }
           
+          // V25 Fix: Remove \usepackage{tikz} as it crashes TikZJax.
+          newCode = newCode.replace(/\\usepackage\{tikz\}\r?\n/g, '');
+          // V25 Fix: Replace \textcircled{} with standard TikZ nodes as TikZJax lacks textcomp.
+          newCode = newCode.replace(/\\textcircled\{([^}]+)\}/g, '$1');
+
           let replacement = `${p}\`\`\`tikz${newCode}\`\`\``;
           
           // Clean up any double prefixes that might have occurred from previous versions
