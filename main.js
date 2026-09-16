@@ -1034,8 +1034,8 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
   fixTikz(text) {
     let fixedCount = 0;
-    // Capture any prefix (like blockquotes or indentation) before ```tikz
-    let tikzRegex = /^([ \t>]*?)```tikz([\s\S]*?)```/gm;
+      // Capture any prefix (like blockquotes or indentation) before ```tikz or ```circuitikz
+      let tikzRegex = /^([ \t>]*?)```(?:tikz|circuitikz)([\s\S]*?)```/gm;
 
     let fixedText = text.replace(tikzRegex, (match, prefix, code) => {
       let envMatch = code.match(/\\begin\{(tikzpicture|circuitikz)\}([\s\S]*?)(\\end\{\1\})/);
