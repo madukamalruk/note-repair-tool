@@ -1060,22 +1060,14 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           
           let p = prefix ? prefix : '';
           
-          // V12 Fix: Preserve the user's original preamble if it exists. 
-          // Only inject the hardcoded preamble if \begin{document} is completely missing.
-          let hasPreamble = code.includes('\\begin{document}');
-          let newCode = '';
-          
-          if (!hasPreamble) {
-              newCode = `\n${p}\\usepackage{circuitikz}\n${p}\\usepackage{amsmath}\n${p}\\usetikzlibrary{decorations.markings}\n${p}\\begin{document}\n${p}\\begin{${envName}}${envContent}${envEnd}\n${p}\\end{document}\n${p}`;
-          } else {
-              // Replace the content inside the environment, preserving the rest of the code
-              // Since `code` already contains the original prefixes, we don't need to re-apply them.
-              newCode = code.replace(envMatch[2], envContent);
-          }
-          
-          // V27 Fix: Reverting V26. ONLY remove \usepackage{tikz} as it crashes TikZJax. \usepackage{circuitikz} is actually REQUIRED when \begin{document} is used!
+          // V28 Fix: ALWAYS rebuild the block cleanly from the extracted envContent.
+          // The old hasPreamble logic was keeping broken \end{document} tags and re-injecting
+          // the preamble on top, causing a crash loop. Now we always produce a clean output.
+          let newCode = `\n${p}\\usepackage{circuitikz}\n${p}\\usepackage{amsmath}\n${p}\\usetikzlibrary{decorations.markings}\n${p}\\begin{document}\n${p}\\begin{${envName}}${envContent}${envEnd}\n${p}\\end{document}\n${p}`;
+
+          // Strip standalone \usepackage{tikz} since TikZJax does not support it.
           newCode = newCode.replace(/\\usepackage\{tikz\}\r?\n/g, '');
-          // V25 Fix: Replace \textcircled{} with standard TikZ nodes as TikZJax lacks textcomp.
+          // Replace \textcircled{} which requires the textcomp package (not in TikZJax).
           newCode = newCode.replace(/\\textcircled\{([^}]+)\}/g, '$1');
 
           let replacement = `${p}\`\`\`tikz${newCode}\`\`\``;
