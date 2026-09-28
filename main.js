@@ -1,4 +1,4 @@
-const { Plugin, Notice, MarkdownView } = require('obsidian');
+﻿const { Plugin, Notice, MarkdownView } = require('obsidian');
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
@@ -30,9 +30,9 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           if (result.changed) {
             // Replace selection preserves undo history automatically
             editor.replaceSelection(result.text);
-            new Notice(`⚡ Repaired Selection: ${result.summary}`);
+            new Notice(`âš¡ Repaired Selection: ${result.summary}`);
           } else {
-            new Notice('✨ Selected text is already clean!');
+            new Notice('âœ¨ Selected text is already clean!');
           }
         } else {
           new Notice('Please select text first!');
@@ -46,7 +46,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       editorCallback: (editor, view) => {
         if (editor.undo) {
           editor.undo();
-          new Notice('↩️ Undid last action');
+          new Notice('â†©ï¸ Undid last action');
         } else {
           new Notice('Cannot undo natively in this view.');
         }
@@ -57,7 +57,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       this.app.workspace.on('editor-menu', (menu, editor, view) => {
         menu.addItem((item) => {
           item
-            .setTitle('⚡ Repair Note (Fix Formatting)')
+            .setTitle('âš¡ Repair Note (Fix Formatting)')
             .setIcon('zap')
             .onClick(() => {
               this.repairEditor(editor);
@@ -65,12 +65,12 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         });
         menu.addItem((item) => {
           item
-            .setTitle('↩️ Undo Last Action')
+            .setTitle('â†©ï¸ Undo Last Action')
             .setIcon('rotate-ccw')
             .onClick(() => {
               if (editor.undo) {
                 editor.undo();
-                new Notice('↩️ Undid last action');
+                new Notice('â†©ï¸ Undid last action');
               }
             });
         });
@@ -87,7 +87,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     if (activeView && activeView.editor) {
       if (activeView.editor.undo) {
         activeView.editor.undo();
-        new Notice('↩️ Undid last action');
+        new Notice('â†©ï¸ Undid last action');
       }
     } else {
       new Notice('No active markdown note open!');
@@ -125,9 +125,9 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         { line: lastLine, ch: lastLineLength }
       );
       
-      new Notice(`⚡ Note Repaired!\n${result.summary}`, 5000);
+      new Notice(`âš¡ Note Repaired!\n${result.summary}`, 5000);
     } else {
-      new Notice('✨ Note is already clean! No issues found.', 3000);
+      new Notice('âœ¨ Note is already clean! No issues found.', 3000);
     }
   }
 
@@ -139,7 +139,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       if (condition) { text = res.text !== undefined ? res.text : text; changes.push(label); }
     };
 
-    // 1. Normalize CRLF → LF
+    // 1. Normalize CRLF â†’ LF
     const indentRes = this.fixIndentation(text);
     text = indentRes.text;
     if (indentRes.fixedCount > 0) changes.push('Fixed Indentation/Spacing');
@@ -152,7 +152,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const hrRes = this.fixHorizontalRules(text);
     if (hrRes.fixed) { text = hrRes.text; changes.push('Spaced horizontal rules'); }
 
-    // 3. Tables (ONE pass only — bug fix: was running twice)
+    // 3. Tables (ONE pass only â€” bug fix: was running twice)
     const tableRes = this.fixTables(text);
     if (tableRes.mergedRows > 0) { text = tableRes.text; changes.push(`Merged ${tableRes.mergedRows} split table rows`); }
 
@@ -200,7 +200,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const boldRes = this.fixBoldFormatting(text);
     if (boldRes.fixed) { text = boldRes.text; changes.push('Fixed broken bold markers'); }
 
-    // 12. Code block language tagging (Matlab/Python label → ```matlab tag)
+    // 12. Code block language tagging (Matlab/Python label â†’ ```matlab tag)
     const codeLangRes = this.fixCodeBlockLanguages(text);
     if (codeLangRes.fixed) { text = codeLangRes.text; changes.push('Added syntax highlighting tags'); }
 
@@ -222,7 +222,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     };
   }
 
-  // ─── Helpers ───────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   fixFunctionPlotBlocks(text) {
     let original = text;
@@ -331,11 +331,11 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           let firstContent = contentIdx < lines.length ? lines[contentIdx].trim() : '';
 
           if (mermaidKeywords.test(firstContent)) {
-            // It's a mermaid diagram — tag as mermaid, not matlab
+            // It's a mermaid diagram â€” tag as mermaid, not matlab
             lines[nextIdx] = '```mermaid';
             fixedCount++;
           } else if (tikzKeywords.test(firstContent)) {
-            // It's a TikZ diagram — leave untagged (tikzjax needs no tag)
+            // It's a TikZ diagram â€” leave untagged (tikzjax needs no tag)
             // do nothing
           } else {
             // Safe to apply the hinted language
@@ -362,7 +362,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       const line = lines[i];
       const t = line.trim();
 
-      // Track code fences — never modify anything inside a code block
+      // Track code fences â€” never modify anything inside a code block
       if (t.startsWith('```')) {
         inCodeBlock = !inCodeBlock;
         out.push(line);
@@ -479,7 +479,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     return parts.map(c => c.trim());
   }
 
-  // ─── Fixers ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Fixers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   fixIndentation(text) {
     let fixedCount = 0;
@@ -931,9 +931,9 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*"?\-"?\s*\)\)/g, '$1(("Sub"))');
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*([\+\-\*\/])\s*\)\)/g, '$1(("$2"))');
 
-        // V20 Fix: LLMs sometimes generate unicode arrows (→) which cause Lexical errors
-        if (l.includes('→')) {
-          l = l.replace(/→/g, '-->');
+        // V20 Fix: LLMs sometimes generate unicode arrows (â†’) which cause Lexical errors
+        if (l.includes('â†’')) {
+          l = l.replace(/â†’/g, '-->');
           fixedCount++;
         }
 
@@ -1128,18 +1128,13 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
   fixMathJaxBlockAttributes(text) {
     let fixedCount = 0;
-    // V31 Fix: Obsidian parses { } at the end of a line as a markdown block attribute and strips it!
-    // This breaks LaTeX commands like \cline{2-2} if they are the last thing on the line.
-    // Solution: Add a % comment to the end of any line ending with } to prevent stripping.
-    let lines = text.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-        // Find lines ending with \cline{...} optionally followed by spaces
-        if (lines[i].match(/\\cline\{[^}]+\}\s*$/)) {
-            // Check if it already has a % comment
-            if (!lines[i].match(/%\s*$/)) {
-                lines[i] = lines[i].replace(/(\\cline\{[^}]+\})(\s*)$/, '$1 %$2');
-                fixedCount++;
-            }
+    // V31 Fix (Updated): Obsidian strips { } as a block attribute before MathJax renders.
+    // The only working fix: replace \cline{...} with \hline entirely.
+    let oldText = text;
+    text = text.replace(/\\cline\{[^}]+\}/g, '\\hline');
+    if (text !== oldText) fixedCount++;
+    return { text, fixedCount };
+  }
         }
     }
     return { text: lines.join('\n'), fixedCount };
@@ -1168,3 +1163,5 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     return { text: newText, fixed: oldText !== newText };
   }
 }
+
+
