@@ -188,6 +188,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const collapsedMathRes = this.fixCollapsedMath(text);
     if (collapsedMathRes.fixedCount > 0) { text = collapsedMathRes.text; changes.push('Repaired collapsed LaTeX math arrays'); }
 
+    // 10c. Fix single $ used for multiline math blocks inside blockquotes
+    const singleDollarRes = this.fixSingleDollarMathBlocks(text);
+    if (singleDollarRes.fixedCount > 0) { text = singleDollarRes.text; changes.push('Fixed blockquote multi-line math block enclosures ($$ instead of $)'); }
+
     // 11. Bold marker repair
     const boldRes = this.fixBoldFormatting(text);
     if (boldRes.fixed) { text = boldRes.text; changes.push('Fixed broken bold markers'); }
@@ -1102,6 +1106,20 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         return match;
     });
     return { text: fixedText, fixedCount };
+  }
+
+  fixSingleDollarMathBlocks(text) {
+    let fixedCount = 0;
+    // Replace lines that consist of exactly "> $" (or similar spacing) with "> $$"
+    // This fixes multi-line math blocks in blockquotes that AI generated with single $, which breaks markdown parsing
+    let lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].match(/^[ \t]*>[ \t]*\$[ \t]*$/)) {
+            lines[i] = lines[i].replace('$', '$$');
+            fixedCount++;
+        }
+    }
+    return { text: lines.join('\n'), fixedCount };
   }
 
   fixSpacing(text) {
