@@ -192,6 +192,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const singleDollarRes = this.fixSingleDollarMathBlocks(text);
     if (singleDollarRes.fixedCount > 0) { text = singleDollarRes.text; changes.push('Fixed blockquote multi-line math block enclosures ($$ instead of $)'); }
 
+    // 10d. Fix Obsidian block attribute stripping for \cline
+    const blockAttrRes = this.fixMathJaxBlockAttributes(text);
+    if (blockAttrRes.fixedCount > 0) { text = blockAttrRes.text; changes.push('Prevented Obsidian from stripping \\cline parameters'); }
+
     // 11. Bold marker repair
     const boldRes = this.fixBoldFormatting(text);
     if (boldRes.fixed) { text = boldRes.text; changes.push('Fixed broken bold markers'); }
@@ -1117,6 +1121,25 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         if (lines[i].match(/^[ \t]*>[ \t]*\$[ \t]*$/)) {
             lines[i] = lines[i].replace('$', '$$');
             fixedCount++;
+        }
+    }
+    return { text: lines.join('\n'), fixedCount };
+  }
+
+  fixMathJaxBlockAttributes(text) {
+    let fixedCount = 0;
+    // V31 Fix: Obsidian parses { } at the end of a line as a markdown block attribute and strips it!
+    // This breaks LaTeX commands like \cline{2-2} if they are the last thing on the line.
+    // Solution: Add a % comment to the end of any line ending with } to prevent stripping.
+    let lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        // Find lines ending with \cline{...} optionally followed by spaces
+        if (lines[i].match(/\\cline\{[^}]+\}\s*$/)) {
+            // Check if it already has a % comment
+            if (!lines[i].match(/%\s*$/)) {
+                lines[i] = lines[i].replace(/(\\cline\{[^}]+\})(\s*)$/, '$1 %$2');
+                fixedCount++;
+            }
         }
     }
     return { text: lines.join('\n'), fixedCount };
