@@ -1,4 +1,4 @@
-﻿const { Plugin, Notice, MarkdownView } = require('obsidian');
+const { Plugin, Notice, MarkdownView } = require('obsidian');
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
@@ -1134,10 +1134,6 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     text = text.replace(/\\cline\{[^}]+\}/g, '\\hline');
     if (text !== oldText) fixedCount++;
     return { text, fixedCount };
-  }
-        }
-    }
-    return { text: lines.join('\n'), fixedCount };
   }
 
   fixSpacing(text) {
