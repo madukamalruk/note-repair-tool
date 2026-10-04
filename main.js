@@ -127,7 +127,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       
       new Notice(`âš¡ Note Repaired!\n${result.summary}`, 5000);
     } else {
-      new Notice('âœ¨ Note is already clean! No issues found.', 3000);
+      new Notice('\u2714 Note is already clean! No issues found.', 3000);
     }
   }
 
@@ -1052,6 +1052,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           let envName = envMatch[1];
           let envContent = envMatch[2];
           let envEnd = envMatch[3];
+          // V33 Fix: Wrap pgfkeys attributes containing math in braces to prevent pgfkeys parser crash
+          // when the math contains an equals sign '=' or comma ','
+          // Example: to[R, l=$R_G=g_0=1$] -> to[R, l={$R_G=g_0=1$}]
+          envContent = envContent.replace(/([a-zA-Z_]+)=\$([^$]+)\$/g, '$1={$$2$}');
           
           // V12 Fix: TikZJax doesn't support the patterns library. 
           // Remove any pattern or pattern color attributes to prevent broken images.
