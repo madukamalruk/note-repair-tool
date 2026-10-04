@@ -1086,6 +1086,16 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           // Clean up growing blank lines that might have occurred from previous versions
           if (p) replacement = replacement.replace(new RegExp(`\n${p}\\s*\n${p}\\s*\n`, 'g'), `\n${p}\n`);
           
+          // V32 Fix: Inside callouts (> prefix) LLM output often drops the '> ' from body lines.
+          // A line without '>' ends the callout and breaks the code fence -> TikZ shows as raw text / broken image.
+          if (p && p.includes('>')) {
+              const pt = p.trimEnd();
+              replacement = replacement.split('\n').map((ln, idx) => {
+                  if (idx === 0 || /^[ \t]*>/.test(ln)) return ln;
+                  return ln.trim() === '' ? pt : p + ln;
+              }).join('\n');
+          }
+
           if (match !== replacement) {
               fixedCount++;
           }
