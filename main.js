@@ -125,7 +125,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         { line: lastLine, ch: lastLineLength }
       );
       
-      new Notice(`âš¡ Note Repaired!\n${result.summary}`, 5000);
+      new Notice(`\u26A1 Note Repaired!\n${result.summary}`, 5000);
     } else {
       new Notice('\u2714 Note is already clean! No issues found.', 3000);
     }
