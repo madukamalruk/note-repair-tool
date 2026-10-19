@@ -1042,20 +1042,33 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
   fixTikz(text) {
     let fixedCount = 0;
-      // Capture any prefix (like blockquotes or indentation) before ```tikz or ```circuitikz
-      let tikzRegex = /^([ \t>]*?)```(?:tikz|circuitikz)([\s\S]*?)```/gm;
+    // Capture any prefix (like blockquotes or indentation) before ```tikz or ```circuitikz
+    let tikzRegex = /^([ \t>]*?)```(?:tikz|circuitikz)([\s\S]*?)```/gm;
 
     let fixedText = text.replace(tikzRegex, (match, prefix, code) => {
       let envMatch = code.match(/\\begin\{(tikzpicture|circuitikz)\}([\s\S]*?)(\\end\{\1\})/);
       
       if (envMatch) {
           let envName = envMatch[1];
-          let envContent = envMatch[2];
+          let rawEnvContent = envMatch[2];
           let envEnd = envMatch[3];
-          // V33 Fix: Wrap pgfkeys attributes containing math in braces to prevent pgfkeys parser crash
+
+          // Determine prefix p (e.g. '> ' if inside a callout, or '' if at root)
+          let p = prefix ? prefix : '';
+          if (p.includes('>') && !p.endsWith(' ')) {
+              p += ' ';
+          }
+
+          // V34 Fix: Strip any blockquote markers ('> ' or '>') from lines inside envContent
+          // to prevent LaTeX parsing crash (! LaTeX Error: Missing \\begin{document} on '>')
+          let envContent = rawEnvContent.replace(/^[ \t]*>[ \t]?/gm, '');
+
+          // V33/V34 Fix: Wrap pgfkeys attributes containing math in braces to prevent pgfkeys parser crash
           // when the math contains an equals sign '=' or comma ','
+          // Supports standard keys as well as current/voltage direction keys: i>, i<, i^>, i_>, v>, etc.
           // Example: to[R, l=$R_G=g_0=1$] -> to[R, l={$R_G=g_0=1$}]
-          envContent = envContent.replace(/([a-zA-Z_]+)=\$([^$]+)\$/g, '$1={$$2$}');
+          // Example: to[R, i>=$I_c$] -> to[R, i>={$I_c$}]
+          envContent = envContent.replace(/([a-zA-Z0-9_<>^_]+)=\$([^$]+)\$/g, '$1={$$2$}');
           
           // V12 Fix: TikZJax doesn't support the patterns library. 
           // Remove any pattern or pattern color attributes to prevent broken images.
@@ -1069,36 +1082,40 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           
           // Fix unsupported tdplot_main_coords (tikz-3dplot) by replacing with explicit 3D axes
           envContent = envContent.replace(/tdplot_main_coords/g, 'x={(-0.5cm,-0.4cm)}, y={(1cm,0cm)}, z={(0cm,1cm)}');
-          
-          let p = prefix ? prefix : '';
-          
-          // V28 Fix: ALWAYS rebuild the block cleanly from the extracted envContent.
-          // The old hasPreamble logic was keeping broken \end{document} tags and re-injecting
-          // the preamble on top, causing a crash loop. Now we always produce a clean output.
-          let newCode = `\n${p}\\usepackage{circuitikz}\n${p}\\usepackage{amsmath}\n${p}\\usetikzlibrary{decorations.markings}\n${p}\\begin{document}\n${p}\\begin{${envName}}${envContent}${envEnd}\n${p}\\end{document}\n${p}`;
 
-          // Strip standalone \usepackage{tikz} since TikZJax does not support it.
-          newCode = newCode.replace(/\\usepackage\{tikz\}\r?\n/g, '');
-          // Replace \textcircled{} which requires the textcomp package (not in TikZJax).
-          newCode = newCode.replace(/\\textcircled\{([^}]+)\}/g, '$1');
+          // Strip standalone \\usepackage{tikz} since TikZJax does not support it.
+          envContent = envContent.replace(/\\usepackage\{tikz\}\r?\n?/g, '');
+          // Replace \\textcircled{} which requires the textcomp package (not in TikZJax).
+          envContent = envContent.replace(/\\textcircled\{([^}]+)\}/g, '$1');
 
-          let replacement = `${p}\`\`\`tikz${newCode}\`\`\``;
-          
-          // Clean up any double prefixes that might have occurred from previous versions
-          if (p) replacement = replacement.replace(new RegExp(`^${p}${p}`, 'gm'), p);
-          
-          // Clean up growing blank lines that might have occurred from previous versions
-          if (p) replacement = replacement.replace(new RegExp(`\n${p}\\s*\n${p}\\s*\n`, 'g'), `\n${p}\n`);
-          
-          // V32 Fix: Inside callouts (> prefix) LLM output often drops the '> ' from body lines.
-          // A line without '>' ends the callout and breaks the code fence -> TikZ shows as raw text / broken image.
-          if (p && p.includes('>')) {
-              const pt = p.trimEnd();
-              replacement = replacement.split('\n').map((ln, idx) => {
-                  if (idx === 0 || /^[ \t]*>/.test(ln)) return ln;
-                  return ln.trim() === '' ? pt : p + ln;
-              }).join('\n');
-          }
+          // Separate environment options e.g. [x=2cm, y=2cm] from the body
+          let optMatch = envContent.match(/^(\s*\[[\s\S]*?\])?([\s\S]*)$/);
+          let envOpts = optMatch && optMatch[1] ? optMatch[1].trim() : '';
+          let envBody = optMatch && optMatch[2] ? optMatch[2] : envContent;
+
+          // Clean body lines and apply prefix p cleanly to each line
+          let bodyLines = envBody.replace(/^\r?\n/, '').replace(/\r?\n\s*$/, '').split(/\r?\n/).map(line => {
+              if (p) {
+                  return line.trim() === '' ? p.trimEnd() : p + line;
+              }
+              return line;
+          }).join('\r\n');
+
+          // Rebuild clean TikZ code block with standardized preamble
+          let lines = [
+              p + "```tikz",
+              p + "\\usepackage{circuitikz}",
+              p + "\\usepackage{amsmath}",
+              p + "\\usetikzlibrary{decorations.markings}",
+              p + "\\begin{document}",
+              p + '\\begin{' + envName + '}' + (envOpts ? ' ' + envOpts : ''),
+              bodyLines,
+              p + envEnd,
+              p + "\\end{document}",
+              p + "```"
+          ];
+
+          let replacement = lines.join('\r\n');
 
           if (match !== replacement) {
               fixedCount++;
