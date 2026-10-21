@@ -11,7 +11,7 @@ An Obsidian plugin that automatically repairs and normalizes broken Markdown syn
 - **Dataview Protection:** Wraps inline Dataview fields (`[field::value]`) in backticks to prevent formatting conflicts.
 - **Formatting Cleanup:** Normalizes indentation, trims excessive empty lines, and correctly formats bold text.
 - **YouTube Embeds:** Automatically converts standard Markdown YouTube links into embedded `<iframe>` videos.
-- **AI Leak Cleanup (V36):** Removes `[cite: ...]`, `(Source N ...)`, pasted `STATUS:` lines and the "next section?" question, and fills the literal `{{date:YYYY-MM-DD}}` in the YAML.
+- **AI Leak Cleanup (V36):** Removes `[cite: ...]` markers and fills the literal `{{date:YYYY-MM-DD}}` in the YAML.
 - **Math Delimiters (V37):** Converts `\( \)` and `\[ \]` (not rendered by Obsidian) to `$` and `$$`, and re-quotes math lines inside callouts that lost their `> ` prefix.
 - **Tidy Output (V36/V37):** Line-local bold repair, at most one blank line outside code, tight bullet lists, no trailing empty `>` in callouts, plain-text Mermaid labels.
 

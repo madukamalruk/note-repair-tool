@@ -1331,58 +1331,21 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     return { text: newText, fixed: newText !== text };
   }
 
-  // V36: remove [cite: ...] markers, "(Source N ...)" references and the chunk-boundary
-  // lines (STATUS / "ඊළඟ කොටසට යමුද?") that get copy-pasted into the note.
+  // V36/V37: remove [cite: ...] markers only (Source notes and chunk lines are kept on purpose)
   fixLeaks(text) {
+    // Only [cite: ...] markers are removed. "(Source N ...)" notes and the chunk-boundary
+    // lines (STATUS / next-section question / ---) are intentionally kept.
     let fixedCount = 0;
     const lines = text.split('\n');
-    const out = [];
     let inCode = false;
-
-    let fmEnd = -1;
-    if (lines[0] && lines[0].trim() === '---') {
-      for (let i = 1; i < Math.min(lines.length, 30); i++) {
-        if (lines[i].trim() === '---') { fmEnd = i; break; }
-      }
-    }
-
     const citeRe = /[ \t]*\[(?:cite(?:_start|_end)?(?::[^\]\n]*)?|Sources?\s*\d+[^\]\n]*)\]/g;
-    const sourceLineRe = /^[>\s]*[*_]*\(\s*Sources?\b.*\)[*_]*\s*$/;
-    const sourceInlineRe = /[ \t]*\(\s*Sources?\s+\d+(?:\s*(?:,|and|&|\u0dc3\u0dc4)\s*\d+)*[^()\n]*\)/g;
-    const boundaryRe = /^[>\s]*(?:STATUS:\s*(?:Done|Complete)\b.*|\u0d8a\u0dc5\u0d9f.{0,20}\u0dba\u0db8\u0dd4\u0daf\s*[?\uff1f]?)\s*$/;
-
-    for (let i = 0; i < lines.length; i++) {
-      let line = lines[i];
-      if (line.replace(/^[>\s]*/, '').startsWith('```')) { inCode = !inCode; out.push(line); continue; }
-      if (inCode) { out.push(line); continue; }
-
-      if (sourceLineRe.test(line)) { fixedCount++; continue; }
-
-      if (boundaryRe.test(line)) {
-        fixedCount++;
-        // also drop the horizontal rule that precedes the boundary (never the YAML closing ---)
-        let k = out.length - 1;
-        while (k > fmEnd && out[k].trim() === '') k--;
-        if (k > fmEnd && out[k].trim() === '---') {
-          out.length = k;
-          while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
-          out.push('');
-        }
-        if (/STATUS:\s*Complete/i.test(line)) {
-          // last chunk: drop the closing congratulation (at most 3 plain lines after the STATUS line)
-          const rest = lines.slice(i + 1).filter(l => l.trim() !== '');
-          if (rest.length <= 3 && rest.every(l => !/^\s*(#|```|\||>|\$)/.test(l))) {
-            fixedCount += rest.length;
-            break;
-          }
-        }
-        continue;
-      }
-
-      const cleaned = line.replace(citeRe, '').replace(sourceInlineRe, '');
+    const out = lines.map(line => {
+      if (line.replace(/^[>\s]*/, '').startsWith('```')) { inCode = !inCode; return line; }
+      if (inCode) return line;
+      const cleaned = line.replace(citeRe, '');
       if (cleaned !== line) fixedCount++;
-      out.push(cleaned);
-    }
+      return cleaned;
+    });
     return { text: out.join('\n'), fixedCount };
   }
 
@@ -1581,7 +1544,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const lines = text.split('\n');
     const add = (i, sev, msg) => issues.push({ line: i, sev, msg, snippet: lines[i].replace(/^[>\s]*/, '').trim().slice(0, 90) });
     const sinhala = /[඀-෿]/;
-    const leakRe = /\[cite|\(\s*Sources?\s+\d|STATUS:\s*(?:Done|Complete)|\u0d8a\u0dc5\u0d9f.{0,20}\u0dba\u0db8\u0dd4\u0daf|\{\{\s*date/;
+        const leakRe = /\[cite|\{\{\s*date/;
     const skipRe = /(?:&=|=)\s*\\(?:dots|ldots|cdots)\s*(?:&=|=)|\\(?:dots|ldots)\s*&\s*=/;
     const proseSkipRe = new RegExp('\\bsimilarly\\b|\\band so on\\b|after simplification|\u0dc3\u0dd4\u0dc5\u0dd4 \u0d9a\u0dd2\u0dbb\u0dd3\u0db8\u0dd9\u0db1\u0dca.{0,40}\u0dbd\u0db6\u0dcf\u0d9c\u0dad \u0dc4\u0dd0\u0d9a|\u0db8\u0dda \u0d86\u0d9a\u0dcf\u0dbb\u0dba\u0da7\u0db8', 'i');
 
@@ -1630,7 +1593,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       const isMathLine = wasMath || inMath || dollars > 0;
 
       if (skipRe.test(bare)) add(i, 'warn', 'possible skipped step (\\dots between equal signs)');
-      if (leakRe.test(bare)) add(i, 'warn', 'leftover cite/source/chunk text: run Repair');
+      if (leakRe.test(bare)) add(i, 'warn', 'leftover [cite] or {{date}} text: run Repair');
 
       if (this.isPlaceholderLine(bare)) {
         add(i, 'info', bare.startsWith('[\u{1F916}') ? 'ChatGPT image prompt' : 'image/screenshot still to paste');
