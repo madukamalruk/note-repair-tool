@@ -1546,7 +1546,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const sinhala = /[඀-෿]/;
         const leakRe = /\[cite|\{\{\s*date/;
     const skipRe = /(?:&=|=)\s*\\(?:dots|ldots|cdots)\s*(?:&=|=)|\\(?:dots|ldots)\s*&\s*=/;
-    const proseSkipRe = new RegExp('\\bsimilarly\\b|\\band so on\\b|after simplification|\u0dc3\u0dd4\u0dc5\u0dd4 \u0d9a\u0dd2\u0dbb\u0dd3\u0db8\u0dd9\u0db1\u0dca.{0,40}\u0dbd\u0db6\u0dcf\u0d9c\u0dad \u0dc4\u0dd0\u0d9a|\u0db8\u0dda \u0d86\u0d9a\u0dcf\u0dbb\u0dba\u0da7\u0db8', 'i');
+    const proseSkipRe = new RegExp('\\bsimilarly\\b|\\band so on\\b|after simplification|\u0dc3\u0dd4\u0dc5\u0dd4 \u0d9a\u0dd2\u0dbb\u0dd3\u0db8\u0dd9\u0db1\u0dca.{0,40}\u0dbd\u0db6\u0dcf\u0d9c\u0dad \u0dc4\u0dd0\u0d9a|\u0db8\u0dda \u0d86\u0d9a\u0dcf\u0dbb\u0dba\u0da7\u0db8|\u0db8\u0dda \u0d86\u0d9a\u0dcf\u0dbb\u0dba\u0dd9\u0db1\u0dca\u0db8|\u0d92 \u0d86\u0d9a\u0dcf\u0dbb\u0dba\u0da7\u0db8|\u0d92 \u0d86\u0d9a\u0dcf\u0dbb\u0dba\u0dd9\u0db1\u0dca\u0db8|\u0dc3\u0dcf\u0db0\u0db1\u0dba.{0,80}\u0d9a\u0dc5 \u0dc4\u0dd0\u0d9a', 'i');
 
     let inCode = false;
     let codeLang = '';
