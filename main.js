@@ -30,9 +30,9 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           if (result.changed) {
             // Replace selection preserves undo history automatically
             editor.replaceSelection(result.text);
-            new Notice(`âš¡ Repaired Selection: ${result.summary}`);
+            new Notice(`\u26A1 Repaired Selection: ${result.summary}`);
           } else {
-            new Notice('âœ¨ Selected text is already clean!');
+            new Notice('\u2728 Selected text is already clean!');
           }
         } else {
           new Notice('Please select text first!');
@@ -46,7 +46,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       editorCallback: (editor, view) => {
         if (editor.undo) {
           editor.undo();
-          new Notice('â†©ï¸ Undid last action');
+          new Notice('\u21A9\uFE0F Undid last action');
         } else {
           new Notice('Cannot undo natively in this view.');
         }
@@ -57,7 +57,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       this.app.workspace.on('editor-menu', (menu, editor, view) => {
         menu.addItem((item) => {
           item
-            .setTitle('âš¡ Repair Note (Fix Formatting)')
+            .setTitle('\u26A1 Repair Note (Fix Formatting)')
             .setIcon('zap')
             .onClick(() => {
               this.repairEditor(editor);
@@ -65,12 +65,12 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         });
         menu.addItem((item) => {
           item
-            .setTitle('â†©ï¸ Undo Last Action')
+            .setTitle('\u21A9\uFE0F Undo Last Action')
             .setIcon('rotate-ccw')
             .onClick(() => {
               if (editor.undo) {
                 editor.undo();
-                new Notice('â†©ï¸ Undid last action');
+                new Notice('\u21A9\uFE0F Undid last action');
               }
             });
         });
@@ -87,7 +87,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     if (activeView && activeView.editor) {
       if (activeView.editor.undo) {
         activeView.editor.undo();
-        new Notice('â†©ï¸ Undid last action');
+        new Notice('\u21A9\uFE0F Undid last action');
       }
     } else {
       new Notice('No active markdown note open!');
@@ -139,20 +139,28 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       if (condition) { text = res.text !== undefined ? res.text : text; changes.push(label); }
     };
 
-    // 1. Normalize CRLF â†’ LF
+    // 1. Normalize CRLF → LF
     const indentRes = this.fixIndentation(text);
     text = indentRes.text;
     if (indentRes.fixedCount > 0) changes.push('Fixed Indentation/Spacing');
+
+    // 1b. V36: strip AI source/citation leaks and pasted chunk-boundary lines
+    const leakRes = this.fixLeaks(text);
+    if (leakRes.fixedCount > 0) { text = leakRes.text; changes.push(`Removed ${leakRes.fixedCount} cite/source/chunk leaks`); }
 
     // 2. YAML fixes (blank line after YAML, cleanup)
     const yamlRes = this.fixYaml(text);
     if (yamlRes.fixed) { text = yamlRes.text; changes.push('Fixed YAML Frontmatter'); }
 
+    // 2b. V36: fill the literal {{date:YYYY-MM-DD}} placeholder
+    const dateRes = this.fixDatePlaceholder(text);
+    if (dateRes.fixed) { text = dateRes.text; changes.push('Filled date placeholder'); }
+
     // 2.5 Horizontal Rules (prevent Setext H2 issues with tables)
     const hrRes = this.fixHorizontalRules(text);
     if (hrRes.fixed) { text = hrRes.text; changes.push('Spaced horizontal rules'); }
 
-    // 3. Tables (ONE pass only â€” bug fix: was running twice)
+    // 3. Tables (ONE pass only — bug fix: was running twice)
     const tableRes = this.fixTables(text);
     if (tableRes.mergedRows > 0) { text = tableRes.text; changes.push(`Merged ${tableRes.mergedRows} split table rows`); }
 
@@ -200,7 +208,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const boldRes = this.fixBoldFormatting(text);
     if (boldRes.fixed) { text = boldRes.text; changes.push('Fixed broken bold markers'); }
 
-    // 12. Code block language tagging (Matlab/Python label â†’ ```matlab tag)
+    // 12. Code block language tagging (Matlab/Python label → ```matlab tag)
     const codeLangRes = this.fixCodeBlockLanguages(text);
     if (codeLangRes.fixed) { text = codeLangRes.text; changes.push('Added syntax highlighting tags'); }
 
@@ -222,7 +230,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     };
   }
 
-  // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Helpers ───────────────────────────────────────────────────────────────
 
   fixFunctionPlotBlocks(text) {
     let original = text;
@@ -331,11 +339,11 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           let firstContent = contentIdx < lines.length ? lines[contentIdx].trim() : '';
 
           if (mermaidKeywords.test(firstContent)) {
-            // It's a mermaid diagram â€” tag as mermaid, not matlab
+            // It's a mermaid diagram — tag as mermaid, not matlab
             lines[nextIdx] = '```mermaid';
             fixedCount++;
           } else if (tikzKeywords.test(firstContent)) {
-            // It's a TikZ diagram â€” leave untagged (tikzjax needs no tag)
+            // It's a TikZ diagram — leave untagged (tikzjax needs no tag)
             // do nothing
           } else {
             // Safe to apply the hinted language
@@ -362,7 +370,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       const line = lines[i];
       const t = line.trim();
 
-      // Track code fences â€” never modify anything inside a code block
+      // Track code fences — never modify anything inside a code block
       if (t.startsWith('```')) {
         inCodeBlock = !inCodeBlock;
         out.push(line);
@@ -479,7 +487,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     return parts.map(c => c.trim());
   }
 
-  // â”€â”€â”€ Fixers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Fixers ────────────────────────────────────────────────────────────────
 
   fixIndentation(text) {
     let fixedCount = 0;
@@ -792,9 +800,12 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     let lines = text.split('\n');
     let out = [];
     let fixedCount = 0;
+    let inCode = false;
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
+
+      if (line.replace(/^[>\s]*/, '').startsWith('```')) inCode = !inCode;
 
       if (line.includes('$$>') || line.includes(' >$$')) {
         line = line.replace(/\$\$>\s*/g, '$$\n> ');
@@ -806,6 +817,16 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       if (line.trim() === '>' && out.length > 0 && out[out.length - 1].trim() === '>') {
         fixedCount++;
         continue;
+      }
+
+      // V36: an empty '>' line that ends a callout (next line is not quoted) is dropped
+      if (!inCode && /^[ \t]*>[ \t]*$/.test(line)) {
+        const next = i + 1 < lines.length ? lines[i + 1] : '';
+        if (!/^[ \t]*>/.test(next)) {
+          fixedCount++;
+          out.push('');
+          continue;
+        }
       }
 
       out.push(line);
@@ -820,7 +841,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     let fixedCount = 0;
     let inCodeBlock = false;
 
-    const calloutRegex = /^(.*?)\s*\[!(note|info|todo|warning|caution|danger|error|bug|tip|hint|success|check|done|question|help|faq|example|quote|cite)\]\s*(.*)$/i;
+    const calloutRegex = /^(.*?)\s*\[!(note|info|todo|warning|caution|danger|error|bug|tip|hint|success|check|done|question|help|faq|example|quote|cite|abstract|summary|tldr|important|attention)\]([+-]?)\s*(.*)$/i;
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
@@ -834,11 +855,12 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         if (match) {
           let prefix = match[1];
           let type = match[2];
-          let suffix = match[3];
+          let fold = match[3];
+          let suffix = match[4];
 
           if (prefix.trim() === '>' || prefix.trim() === '') {
             if (!prefix.includes('>')) {
-               out.push(`> [!${type}] ${suffix}`);
+               out.push(`> [!${type}]${fold} ${suffix}`);
                fixedCount++;
                continue;
             } else {
@@ -862,7 +884,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
             out.push(cleanPrefix);
             out.push('');
           }
-          out.push(`> [!${type}] ${suffix}`);
+          out.push(`> [!${type}]${fold} ${suffix}`);
           fixedCount++;
           continue;
         }
@@ -909,7 +931,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         // V9 Fix: Strip out existing %%{init}%% theme configurations
         if (l.startsWith('%%{init')) {
           fixedCount++;
-          return prefix; // Leave just the prefix (essentially an empty line)
+          return null; // V36: drop the line entirely (was leaving a blank line that grew on every run)
         }
 
         let injectedLine = '';
@@ -931,10 +953,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*"?\-"?\s*\)\)/g, '$1(("Sub"))');
         l = l.replace(/([a-zA-Z0-9_]+)\(\(\s*([\+\-\*\/])\s*\)\)/g, '$1(("$2"))');
 
-        // V20 Fix: LLMs sometimes generate unicode arrows (â†’) which cause Lexical errors
-        if (l.includes('â†’')) {
-          l = l.replace(/â†’/g, '-->');
-          fixedCount++;
+        // V20/V36 Fix: LLMs sometimes generate unicode arrows (\u2192) outside quoted labels, which cause Lexical errors
+        if (!isMindmap && l.includes('\u2192')) {
+          const arrowed = l.replace(/("[^"\n]*")|\u2192/g, (m, q) => (q ? q : '-->'));
+          if (arrowed !== l) { l = arrowed; fixedCount++; }
         }
 
         l = l.replace(/-->\s*\|([^"|\n]+)\|/g, (m, label) => {
@@ -991,8 +1013,35 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           fixedCount++;
         }
 
+        // V36 Fix: Mermaid labels must be plain text. Strip $ math delimiters, convert LaTeX commands
+        // and replace a bare '&' (inside quoted labels / mindmap text only) with 'and'.
+        if (l.includes('$') || l.includes('\\') || l.includes('&')) {
+          const symbols = { pi: '\u03c0', theta: '\u03b8', omega: '\u03c9', alpha: '\u03b1', beta: '\u03b2', gamma: '\u03b3', delta: '\u03b4', sigma: '\u03c3', mu: '\u03bc', lambda: '\u03bb', phi: '\u03c6', infty: '\u221e', sum: '\u03a3', int: '\u222b', sqrt: '\u221a', leq: '\u2264', le: '\u2264', geq: '\u2265', ge: '\u2265', neq: '\u2260', to: '\u2192', rightarrow: '\u2192', Rightarrow: '\u21d2', pm: '\u00b1', approx: '\u2248', in: '\u2208' };
+          const plain = (str) => str
+            .replace(/\\(?:text|mathrm|mathbf|mathbb)\{([^}]*)\}/g, '$1')
+            .replace(/\\([a-zA-Z]+)/g, (m, n) => (n in symbols ? symbols[n] : (n.length > 1 ? n : m)))
+            .replace(/&(?!(?:[a-zA-Z]+|#\d+);)/g, 'and');
+          let cleaned = l.replace(/\$+/g, '');
+          if (isMindmap) cleaned = plain(cleaned);
+          else cleaned = cleaned.replace(/"([^"\n]*)"/g, (q, inner) => '"' + plain(inner) + '"');
+          if (cleaned !== l) { l = cleaned; fixedCount++; }
+        }
+
         return injectedLine + prefix + l;
       });
+
+      // V36: remove dropped lines, blank lines before the first diagram line, and trailing blank lines
+      let started = false;
+      fixedLines = fixedLines.filter((ln, idx) => {
+        if (ln === null) return false;
+        if (idx === 0) return true;
+        if (!started) {
+          if (ln.replace(/^[s>]*/, '') === '') return false;
+          started = true;
+        }
+        return true;
+      });
+      while (fixedLines.length > 1 && fixedLines[fixedLines.length - 1].replace(/^[s>]*/, '') === '') fixedLines.pop();
 
       // V16 FIX: If the code was inside a blockquote/callout (lines start with "> "),
       // the closing ``` must ALSO have the same prefix.
@@ -1169,17 +1218,119 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
   }
 
   fixSpacing(text) {
-    return text.replace(/\n{4,}/g, '\n\n\n');
+    // V36: at most ONE blank line between elements (code fences are left untouched)
+    const lines = text.split('\n');
+    const out = [];
+    let inCode = false;
+    let blank = 0;
+    for (const line of lines) {
+      const bare = line.replace(/^[>\s]*/, '');
+      if (bare.startsWith('```')) inCode = !inCode;
+      if (!inCode && line.trim() === '') {
+        blank++;
+        if (blank > 1) continue;
+      } else {
+        blank = 0;
+      }
+      out.push(line);
+    }
+    return out.join('\n');
   }
+
   fixBoldFormatting(text) {
-    let oldText = text;
-    let newText = text.replace(/\*\*(.*?)\*\*/gs, (match, inner) => {
-      let cleaned = inner.trim();
-      // Also remove any stray internal newlines that might break bold rendering in obsidian
-      cleaned = cleaned.replace(/\s*\n\s*/g, ' ');
-      return cleaned ? '**' + cleaned + '**' : '****';
+    // V36: strictly line-local. The old global regex merged paragraphs, math blocks and callouts
+    // into one line whenever a single '**' was unbalanced.
+    const lines = text.split('\n');
+    let inCode = false;
+    let inMath = false;
+    const out = lines.map(line => {
+      const bare = line.trim().replace(/^[>\s]*/, '');
+      if (bare.startsWith('```')) { inCode = !inCode; return line; }
+      if (inCode) return line;
+      if (bare === '$$') { inMath = !inMath; return line; }
+      if (inMath || !line.includes('**')) return line;
+
+      const stash = [];
+      const masked = line.replace(/`[^`\n]*`|\$\$[^\n]*?\$\$|\$[^$\n]+\$/g, m => {
+        stash.push(m);
+        return '\u0000' + (stash.length - 1) + '\u0000';
+      });
+      const fixed = masked.replace(/\*\*((?:(?!\*\*)[^\n])+?)\*\*/g, (m, inner) => {
+        const cleaned = inner.trim();
+        return cleaned ? '**' + cleaned + '**' : m;
+      });
+      return fixed.replace(/\u0000(\d+)\u0000/g, (m, i) => stash[Number(i)]);
     });
-    return { text: newText, fixed: oldText !== newText };
+    const newText = out.join('\n');
+    return { text: newText, fixed: newText !== text };
+  }
+
+  // V36: remove [cite: ...] markers, "(Source N ...)" references and the chunk-boundary
+  // lines (STATUS / "ඊළඟ කොටසට යමුද?") that get copy-pasted into the note.
+  fixLeaks(text) {
+    let fixedCount = 0;
+    const lines = text.split('\n');
+    const out = [];
+    let inCode = false;
+
+    let fmEnd = -1;
+    if (lines[0] && lines[0].trim() === '---') {
+      for (let i = 1; i < Math.min(lines.length, 30); i++) {
+        if (lines[i].trim() === '---') { fmEnd = i; break; }
+      }
+    }
+
+    const citeRe = /[ \t]*\[(?:cite(?:_start|_end)?(?::[^\]\n]*)?|Sources?\s*\d+[^\]\n]*)\]/g;
+    const sourceLineRe = /^[>\s]*[*_]*\(\s*Sources?\b.*\)[*_]*\s*$/;
+    const sourceInlineRe = /[ \t]*\(\s*Sources?\s+\d+(?:\s*(?:,|and|&|\u0dc3\u0dc4)\s*\d+)*[^()\n]*\)/g;
+    const boundaryRe = /^[>\s]*(?:STATUS:\s*Done\b.*|\u0d8a\u0dc5\u0d9f.{0,20}\u0dba\u0db8\u0dd4\u0daf\s*[?\uff1f]?)\s*$/;
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      if (line.replace(/^[>\s]*/, '').startsWith('```')) { inCode = !inCode; out.push(line); continue; }
+      if (inCode) { out.push(line); continue; }
+
+      if (sourceLineRe.test(line)) { fixedCount++; continue; }
+
+      if (boundaryRe.test(line)) {
+        fixedCount++;
+        // also drop the horizontal rule that precedes the boundary (never the YAML closing ---)
+        let k = out.length - 1;
+        while (k > fmEnd && out[k].trim() === '') k--;
+        if (k > fmEnd && out[k].trim() === '---') {
+          out.length = k;
+          while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
+          out.push('');
+        }
+        continue;
+      }
+
+      const cleaned = line.replace(citeRe, '').replace(sourceInlineRe, '');
+      if (cleaned !== line) fixedCount++;
+      out.push(cleaned);
+    }
+    return { text: out.join('\n'), fixedCount };
+  }
+
+  // V36: Obsidian only expands {{date}} when a template is inserted, so the AI's literal
+  // "Date: {{date:YYYY-MM-DD}}" stays as text. Fill it with today's date inside the YAML only.
+  fixDatePlaceholder(text) {
+    const lines = text.split('\n');
+    if (!lines[0] || lines[0].trim() !== '---') return { text, fixed: false };
+    let close = -1;
+    for (let i = 1; i < Math.min(lines.length, 30); i++) {
+      if (lines[i].trim() === '---') { close = i; break; }
+    }
+    if (close === -1) return { text, fixed: false };
+
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const iso = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    let fixed = false;
+    for (let i = 1; i < close; i++) {
+      lines[i] = lines[i].replace(/\{\{\s*date\s*(?::\s*YYYY-MM-DD\s*)?\}\}/i, () => { fixed = true; return iso; });
+    }
+    return { text: lines.join('\n'), fixed };
   }
 
   fixYoutubeLinks(text) {
