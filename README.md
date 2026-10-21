@@ -11,6 +11,14 @@ An Obsidian plugin that automatically repairs and normalizes broken Markdown syn
 - **Dataview Protection:** Wraps inline Dataview fields (`[field::value]`) in backticks to prevent formatting conflicts.
 - **Formatting Cleanup:** Normalizes indentation, trims excessive empty lines, and correctly formats bold text.
 - **YouTube Embeds:** Automatically converts standard Markdown YouTube links into embedded `<iframe>` videos.
+- **AI Leak Cleanup (V36):** Removes `[cite: ...]`, `(Source N ...)`, pasted `STATUS:` lines and the "next section?" question, and fills the literal `{{date:YYYY-MM-DD}}` in the YAML.
+- **Math Delimiters (V37):** Converts `\( \)` and `\[ \]` (not rendered by Obsidian) to `$` and `$$`, and re-quotes math lines inside callouts that lost their `> ` prefix.
+- **Tidy Output (V36/V37):** Line-local bold repair, at most one blank line outside code, tight bullet lists, no trailing empty `>` in callouts, plain-text Mermaid labels.
+
+## Commands
+- **Repair current note:** the main fixer. The notice also shows how many image slots are left and how many audit warnings exist.
+- **Next image/screenshot slot:** jumps to the next `[Paste Screenshot ...]` / `[🖼️ Paste ...]` slot and selects it, so `Ctrl+V` replaces it. For a `[🤖 Image Prompt #N - ...: "..."]` line it copies the prompt to the clipboard and selects the paste slot below it.
+- **Audit note:** report only. Lists possible skipped steps, English-only blocks, leftover leaks, unbalanced bold, table pipe mismatches, unsupported functionplot syntax, code blocks inside callouts and unclosed `$$` / fences. Click an item to jump to its line.
 
 ## How to Install
 

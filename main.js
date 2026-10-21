@@ -1,8 +1,46 @@
-const { Plugin, Notice, MarkdownView } = require('obsidian');
+const { Plugin, Notice, MarkdownView, Modal } = require('obsidian');
+
+// V37: clickable audit report
+class AuditModal extends Modal {
+  constructor(app, editor, issues) {
+    super(app);
+    this.editor = editor;
+    this.issues = issues;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl('h2', { text: 'Note audit' });
+    const real = this.issues.filter(x => x.sev !== 'info').length;
+    contentEl.createEl('p', { text: real + ' warnings/errors, ' + (this.issues.length - real) + ' info items. Click a line to jump to it.' });
+    const icons = { error: '\u274C', warn: '\u26A0\uFE0F', info: '\u2139\uFE0F' };
+    for (const sev of ['error', 'warn', 'info']) {
+      const group = this.issues.filter(x => x.sev === sev);
+      if (group.length === 0) continue;
+      contentEl.createEl('h4', { text: icons[sev] + ' ' + sev.toUpperCase() + ' (' + group.length + ')' });
+      for (const it of group) {
+        const row = contentEl.createEl('div', { text: 'Line ' + (it.line + 1) + ': ' + it.msg + (it.snippet ? '  \u2014  ' + it.snippet : '') });
+        row.style.cursor = 'pointer';
+        row.style.padding = '2px 0';
+        row.addEventListener('click', () => {
+          const pos = { line: it.line, ch: 0 };
+          this.editor.setCursor(pos);
+          this.editor.scrollIntoView({ from: pos, to: pos }, true);
+          this.close();
+        });
+      }
+    }
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
-    console.log('Loading Note Repair Tool Plugin V3...');
+    console.log('Loading Note Repair Tool Plugin V37...');
 
     this.addRibbonIcon('zap', 'Note Repair Tool: Fix Current Note', (evt) => {
       this.repairCurrentNote();
@@ -50,6 +88,22 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         } else {
           new Notice('Cannot undo natively in this view.');
         }
+      }
+    });
+
+    this.addCommand({
+      id: 'next-placeholder',
+      name: 'Next image/screenshot slot (copies the ChatGPT prompt, selects the paste slot)',
+      editorCallback: (editor, view) => {
+        this.nextPlaceholder(editor);
+      }
+    });
+
+    this.addCommand({
+      id: 'audit-note',
+      name: 'Audit note (find skipped steps, language drift, leaks, broken blocks)',
+      editorCallback: (editor, view) => {
+        this.showAudit(editor);
       }
     });
 
@@ -125,9 +179,9 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         { line: lastLine, ch: lastLineLength }
       );
       
-      new Notice(`\u26A1 Note Repaired!\n${result.summary}`, 5000);
+      new Notice(`\u26A1 Note Repaired!\n${result.summary}${this.statusSuffix(editor)}`, 7000);
     } else {
-      new Notice('\u2714 Note is already clean! No issues found.', 3000);
+      new Notice(`\u2714 Note is already clean!${this.statusSuffix(editor)}`, 5000);
     }
   }
 
@@ -147,6 +201,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     // 1b. V36: strip AI source/citation leaks and pasted chunk-boundary lines
     const leakRes = this.fixLeaks(text);
     if (leakRes.fixedCount > 0) { text = leakRes.text; changes.push(`Removed ${leakRes.fixedCount} cite/source/chunk leaks`); }
+
+    // 1c. V37: \( \) and \[ \] math delimiters do not render in Obsidian
+    const mathDelimRes = this.fixMathDelimiters(text);
+    if (mathDelimRes.fixedCount > 0) { text = mathDelimRes.text; changes.push('Converted \\( \\) / \\[ \\] math to $ / $$'); }
 
     // 2. YAML fixes (blank line after YAML, cleanup)
     const yamlRes = this.fixYaml(text);
@@ -175,6 +233,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     // 6. Callout math/LaTeX prefix repair
     const calloutRes = this.fixCallouts(text);
     if (calloutRes.fixedCount > 0) { text = calloutRes.text; changes.push(`Fixed ${calloutRes.fixedCount} callout math blocks`); }
+
+    // 6b. V37: re-prefix math lines inside callouts that lost their '> '
+    const calloutMathRes = this.fixCalloutMath(text);
+    if (calloutMathRes.fixedCount > 0) { text = calloutMathRes.text; changes.push(`Re-quoted ${calloutMathRes.fixedCount} math lines inside callouts`); }
 
     // 7. LaTeX array environments
     const latexRes = this.fixLatex(text);
@@ -219,6 +281,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     // 14. Fix functionplot/chart blocks broken by previous hr fix
     const functionplotRes = this.fixFunctionPlotBlocks(text);
     if (functionplotRes.fixed) { text = functionplotRes.text; changes.push('Fixed graph code blocks'); }
+
+    // 17. V37: tight lists (no blank line between consecutive items)
+    const looseRes = this.fixLooseLists(text);
+    if (looseRes.fixedCount > 0) { text = looseRes.text; changes.push('Tightened lists'); }
 
     // 18. Global spacing pass (final polish)
     text = this.fixSpacing(text);
@@ -1283,7 +1349,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const citeRe = /[ \t]*\[(?:cite(?:_start|_end)?(?::[^\]\n]*)?|Sources?\s*\d+[^\]\n]*)\]/g;
     const sourceLineRe = /^[>\s]*[*_]*\(\s*Sources?\b.*\)[*_]*\s*$/;
     const sourceInlineRe = /[ \t]*\(\s*Sources?\s+\d+(?:\s*(?:,|and|&|\u0dc3\u0dc4)\s*\d+)*[^()\n]*\)/g;
-    const boundaryRe = /^[>\s]*(?:STATUS:\s*Done\b.*|\u0d8a\u0dc5\u0d9f.{0,20}\u0dba\u0db8\u0dd4\u0daf\s*[?\uff1f]?)\s*$/;
+    const boundaryRe = /^[>\s]*(?:STATUS:\s*(?:Done|Complete)\b.*|\u0d8a\u0dc5\u0d9f.{0,20}\u0dba\u0db8\u0dd4\u0daf\s*[?\uff1f]?)\s*$/;
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
@@ -1301,6 +1367,14 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           out.length = k;
           while (out.length > 0 && out[out.length - 1].trim() === '') out.pop();
           out.push('');
+        }
+        if (/STATUS:\s*Complete/i.test(line)) {
+          // last chunk: drop the closing congratulation (at most 3 plain lines after the STATUS line)
+          const rest = lines.slice(i + 1).filter(l => l.trim() !== '');
+          if (rest.length <= 3 && rest.every(l => !/^\s*(#|```|\||>|\$)/.test(l))) {
+            fixedCount += rest.length;
+            break;
+          }
         }
         continue;
       }
@@ -1331,6 +1405,287 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       lines[i] = lines[i].replace(/\{\{\s*date\s*(?::\s*YYYY-MM-DD\s*)?\}\}/i, () => { fixed = true; return iso; });
     }
     return { text: lines.join('\n'), fixed };
+  }
+
+  // ─── V37 ─────────────────────────────────────────────────────────────
+
+  // V37: Obsidian does not render \( \) and \[ \]. Convert them to $ and $$.
+  fixMathDelimiters(text) {
+    let fixedCount = 0;
+    const lines = text.split('\n');
+    let inCode = false;
+    const out = lines.map(line => {
+      const bare = line.replace(/^[>\s]*/, '');
+      if (bare.startsWith('```')) { inCode = !inCode; return line; }
+      if (inCode || !/\\[()\[\]]/.test(line)) return line;
+      const prefix = (line.match(/^[>\s]*/) || [''])[0];
+      if (bare === '\\[' || bare === '\\]') { fixedCount++; return prefix + '$$'; }
+
+      const stash = [];
+      const masked = line.replace(/`[^`\n]*`/g, m => {
+        stash.push(m);
+        return '\u0000' + (stash.length - 1) + '\u0000';
+      });
+      let l = masked.replace(/(?<!\\)\\\[(.+?)(?<!\\)\\\]/g, (m, inner) => '$$' + inner.trim() + '$$');
+      l = l.replace(/(?<!\\)\\\((.+?)(?<!\\)\\\)/g, (m, inner) => '$' + inner.trim() + '$');
+      if (l !== masked) fixedCount++;
+      return l.replace(/\u0000(\d+)\u0000/g, (m, i) => stash[Number(i)]);
+    });
+    return { text: out.join('\n'), fixedCount };
+  }
+
+  // V37: inside a callout, a $$ block whose middle lines lost the '> ' prefix ends the callout
+  // early and breaks the equation. Re-prefix those lines (only when the closing $$ is found).
+  fixCalloutMath(text) {
+    let fixedCount = 0;
+    const lines = text.split('\n');
+    const out = [];
+    const dollars = s => (s.replace(/`[^`]*`/g, '').match(/\$\$/g) || []).length;
+    const isQuote = s => /^\s*>/.test(s);
+    let inCode = false;
+    let mathOpen = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const bare = line.replace(/^[>\s]*/, '');
+      if (bare.startsWith('```')) { inCode = !inCode; mathOpen = false; out.push(line); continue; }
+      if (inCode) { out.push(line); continue; }
+
+      if (isQuote(line)) {
+        if (dollars(bare) % 2 === 1) mathOpen = !mathOpen;
+        out.push(line);
+        continue;
+      }
+      if (!mathOpen) { out.push(line); continue; }
+
+      let close = -1;
+      let closeQuoted = false;
+      for (let j = i; j < Math.min(lines.length, i + 40); j++) {
+        if (/^#{1,6}\s/.test(lines[j])) break;
+        if (dollars(lines[j].replace(/^[>\s]*/, '')) % 2 === 1) { close = j; closeQuoted = isQuote(lines[j]); break; }
+      }
+      if (close === -1) { mathOpen = false; out.push(line); continue; }
+
+      const last = closeQuoted ? close - 1 : close;
+      for (let j = i; j <= last; j++) {
+        const raw = lines[j];
+        if (isQuote(raw)) { out.push(raw); continue; }
+        out.push(raw.trim() === '' ? '>' : '> ' + raw);
+        fixedCount++;
+      }
+      i = last;
+      mathOpen = closeQuoted;
+    }
+    return { text: out.join('\n'), fixedCount };
+  }
+
+  // V37: remove the blank line between two consecutive list items (tight, textbook-style lists)
+  fixLooseLists(text) {
+    const lines = text.split('\n');
+    const itemRe = /^([ \t]*(?:>[ \t]*)*)([*+-]|\d+[.)])[ \t]+\S/;
+    const depth = s => (s.match(/>/g) || []).length;
+    const out = [];
+    let inCode = false;
+    let fixedCount = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const bare = line.replace(/^[>\s]*/, '');
+      if (bare.startsWith('```')) inCode = !inCode;
+      if (!inCode && bare === '' && out.length > 0 && i + 1 < lines.length) {
+        const prev = out[out.length - 1].match(itemRe);
+        let j = i + 1;
+        while (j < lines.length && lines[j].replace(/^[>\s]*/, '') === '') j++;
+        const next = j < lines.length ? lines[j].match(itemRe) : null;
+        if (prev && next && depth(prev[1]) === depth(next[1]) && depth(prev[1]) === depth(line)) {
+          fixedCount++;
+          continue;
+        }
+      }
+      out.push(line);
+    }
+    return { text: out.join('\n'), fixedCount };
+  }
+
+  // ─── V37: placeholders (screenshots / ChatGPT images) ────────────────
+
+  isPlaceholderLine(bare) {
+    return bare.startsWith('[Paste Screenshot') || bare.startsWith('[\u{1F5BC}') || bare.startsWith('[\u{1F916}');
+  }
+
+  findPlaceholders(text) {
+    const res = [];
+    const lines = text.split('\n');
+    let inCode = false;
+    for (let i = 0; i < lines.length; i++) {
+      const bare = lines[i].replace(/^[>\s]*/, '');
+      if (bare.startsWith('```')) { inCode = !inCode; continue; }
+      if (inCode || !this.isPlaceholderLine(bare)) continue;
+      res.push({ line: i, kind: bare.startsWith('[\u{1F916}') ? 'prompt' : 'paste' });
+    }
+    return res;
+  }
+
+  async copyToClipboard(t) {
+    try {
+      await navigator.clipboard.writeText(t);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // One hotkey: jump to the next image slot. For a ChatGPT image prompt it copies the prompt and
+  // selects the paste slot that follows, so Ctrl+V of the generated image replaces the placeholder.
+  async nextPlaceholder(editor) {
+    const text = editor.getValue();
+    const all = this.findPlaceholders(text);
+    if (all.length === 0) {
+      new Notice('✅ No image/screenshot placeholders left!');
+      return;
+    }
+    const lines = text.split('\n');
+    const cur = editor.getCursor('to').line;
+    let idx = all.findIndex(p => p.line > cur);
+    if (idx === -1) idx = 0;
+    let target = all[idx];
+    let copied = false;
+    let isPrompt = false;
+
+    if (target.kind === 'prompt') {
+      isPrompt = true;
+      const raw = lines[target.line].replace(/^[>\s]*/, '');
+      const a = raw.indexOf('"');
+      const b = raw.lastIndexOf('"');
+      copied = await this.copyToClipboard(a >= 0 && b > a ? raw.slice(a + 1, b) : raw);
+      const pair = all.find(p => p.kind === 'paste' && p.line > target.line && p.line <= target.line + 4);
+      if (pair) target = pair;
+    }
+
+    const line = lines[target.line];
+    const ch0 = line.length - line.replace(/^[>\s]*/, '').length;
+    const from = { line: target.line, ch: ch0 };
+    const to = { line: target.line, ch: line.length };
+    editor.setSelection(from, to);
+    editor.scrollIntoView({ from, to }, true);
+
+    const left = all.filter(p => p.kind === 'paste').length;
+    if (isPrompt && copied) new Notice(`\u{1F4CB} Image prompt copied. Generate it in ChatGPT, then press Ctrl+V here. (${left} slots left)`, 6000);
+    else if (isPrompt) new Notice(`⚠ Could not copy the prompt automatically. Copy it from the line above. (${left} slots left)`, 6000);
+    else new Notice(`\u{1F4F7} Paste your screenshot with Ctrl+V. (${left} slots left)`, 4000);
+  }
+
+  // ─── V37: audit (report only) ────────────────────────────────────────
+
+  auditText(text) {
+    const issues = [];
+    const lines = text.split('\n');
+    const add = (i, sev, msg) => issues.push({ line: i, sev, msg, snippet: lines[i].replace(/^[>\s]*/, '').trim().slice(0, 90) });
+    const sinhala = /[඀-෿]/;
+    const leakRe = /\[cite|\(\s*Sources?\s+\d|STATUS:\s*(?:Done|Complete)|\u0d8a\u0dc5\u0d9f.{0,20}\u0dba\u0db8\u0dd4\u0daf|\{\{\s*date/;
+    const skipRe = /(?:&=|=)\s*\\(?:dots|ldots|cdots)\s*(?:&=|=)|\\(?:dots|ldots)\s*&\s*=/;
+    const proseSkipRe = new RegExp('\\bsimilarly\\b|\\band so on\\b|after simplification|\u0dc3\u0dd4\u0dc5\u0dd4 \u0d9a\u0dd2\u0dbb\u0dd3\u0db8\u0dd9\u0db1\u0dca.{0,40}\u0dbd\u0db6\u0dcf\u0d9c\u0dad \u0dc4\u0dd0\u0d9a|\u0db8\u0dda \u0d86\u0d9a\u0dcf\u0dbb\u0dba\u0da7\u0db8', 'i');
+
+    let inCode = false;
+    let codeLang = '';
+    let inMath = false;
+    let mathStart = 0;
+    let tableCols = -1;
+    let engRun = [];
+    const flushRun = () => {
+      if (engRun.length >= 3) add(engRun[0], 'warn', `English-only block (${engRun.length} lines): language drift?`);
+      engRun = [];
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i];
+      const quoted = /^\s*>/.test(raw);
+      const bare = raw.replace(/^[>\s]*/, '');
+
+      if (bare.startsWith('```')) {
+        flushRun();
+        if (!inCode) {
+          inCode = true;
+          codeLang = bare.slice(3).trim().toLowerCase();
+          if (quoted && /^(mermaid|tikz|circuitikz|functionplot)/.test(codeLang)) add(i, 'warn', `${codeLang} block inside a callout: it will not render`);
+        } else {
+          inCode = false;
+          codeLang = '';
+        }
+        continue;
+      }
+      if (inCode) {
+        if (codeLang.startsWith('functionplot') && !/^(title|xLabel|yLabel|bounds|disableZoom|grid)\s*:|^---/.test(bare) && /%|&&|\|\||\?|\bmod\s*\(/.test(bare)) {
+          add(i, 'warn', 'functionplot expression uses %, ?, &&, || or mod and may fail to render');
+        }
+        continue;
+      }
+
+      const noCode = bare.replace(/`[^`]*`/g, '');
+      const dollars = (noCode.match(/\$\$/g) || []).length;
+      const wasMath = inMath;
+      if (dollars % 2 === 1) {
+        if (!inMath) mathStart = i;
+        inMath = !inMath;
+      }
+      const isMathLine = wasMath || inMath || dollars > 0;
+
+      if (skipRe.test(bare)) add(i, 'warn', 'possible skipped step (\\dots between equal signs)');
+      if (leakRe.test(bare)) add(i, 'warn', 'leftover cite/source/chunk text: run Repair');
+
+      if (this.isPlaceholderLine(bare)) {
+        add(i, 'info', bare.startsWith('[\u{1F916}') ? 'ChatGPT image prompt' : 'image/screenshot still to paste');
+        flushRun();
+        continue;
+      }
+
+      if (bare.startsWith('|')) {
+        const c = this.countPipes(bare);
+        if (tableCols === -1) tableCols = c;
+        else if (c !== tableCols) add(i, 'warn', `table row has ${c} pipes, the header has ${tableCols}`);
+        flushRun();
+        continue;
+      }
+      tableCols = -1;
+
+      if (isMathLine) { flushRun(); continue; }
+      if (bare === '') continue;
+      if (/^#{1,6}\s/.test(bare) || bare.startsWith('[!')) { flushRun(); continue; }
+
+      if (proseSkipRe.test(bare)) add(i, 'warn', 'skip-style phrase: every step must be written out');
+
+      const masked = noCode.replace(/\$[^$]*\$/g, '');
+      if ((masked.match(/\*\*/g) || []).length % 2 === 1) add(i, 'warn', 'unbalanced ** (bold) on this line');
+
+      const stripped = masked.replace(/https?:\/\/\S+/g, '').replace(/[*_]/g, ' ');
+      if (!sinhala.test(stripped) && (stripped.match(/[A-Za-z]{2,}/g) || []).length >= 8) {
+        engRun.push(i);
+        continue;
+      }
+      flushRun();
+    }
+    flushRun();
+    if (inMath) add(mathStart, 'error', '$$ block is never closed');
+    if (inCode) add(lines.length - 1, 'error', 'code fence is never closed');
+    if (!/Final Topic Map/.test(text) && lines.length > 0) add(0, 'info', 'no "Final Topic Map" yet (fine if more chunks are coming)');
+
+    issues.sort((a, b) => a.line - b.line);
+    return issues;
+  }
+
+  statusSuffix(editor) {
+    const t = editor.getValue();
+    const warn = this.auditText(t).filter(x => x.sev !== 'info').length;
+    const left = this.findPlaceholders(t).filter(p => p.kind === 'paste').length;
+    return `\n\u{1F4CC} ${left} image slots to fill · ⚠ ${warn} warnings` + (warn ? ' (run "Audit note")' : '');
+  }
+
+  showAudit(editor) {
+    const issues = this.auditText(editor.getValue());
+    if (issues.length === 0) {
+      new Notice('✅ Audit clean: no issues found.');
+      return;
+    }
+    new AuditModal(this.app, editor, issues).open();
   }
 
   fixYoutubeLinks(text) {
