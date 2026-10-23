@@ -1184,8 +1184,11 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           // Supports standard keys as well as current/voltage direction keys: i>, i<, i^>, i_>, v>, etc.
           // Example: to[R, l=$R_G=g_0=1$] -> to[R, l={$R_G=g_0=1$}]
           // Example: to[R, i>=$I_c$] -> to[R, i>={$I_c$}]
-          envContent = envContent.replace(/([a-zA-Z0-9_<>^_]+)=\$([^$]+)\$/g, '$1={$$2$}');
+          envContent = envContent.replace(/([a-zA-Z0-9_<>^_]+)=\$([^$]+)\$/g, (m, key, inner) => key + '={$' + inner + '$}');
           
+          // V38: placement keys, unwrapped math/%/& in node text, circuitikz labels
+          envContent = this.fixTikzBody(envContent);
+
           // V12 Fix: TikZJax doesn't support the patterns library. 
           // Remove any pattern or pattern color attributes to prevent broken images.
           if (envContent.includes('pattern')) {
@@ -1220,9 +1223,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           // Rebuild clean TikZ code block with standardized preamble
           let lines = [
               p + "```tikz",
-              p + "\\usepackage{circuitikz}",
-              p + "\\usepackage{amsmath}",
-              p + "\\usetikzlibrary{decorations.markings}",
+              ...this.buildTikzPreamble(code, envName, envContent).map(l => p + l),
               p + "\\begin{document}",
               p + '\\begin{' + envName + '}' + (envOpts ? ' ' + envOpts : ''),
               bodyLines,
@@ -1243,6 +1244,86 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     });
 
     return { text: fixedText, fixedCount };
+  }
+
+  // V38: fixes for AI-written TikZ that is valid-looking but does not compile in TikZJax:
+  //  - "top" / "bottom" are not TikZ placement keys (above / below are)
+  //  - math written without $ inside node text (90^\circ, V_s, \Omega) -> "Missing $ inserted"
+  //  - unescaped % and & inside node text (% starts a LaTeX comment and eats the closing brace)
+  //  - circuitikz labels such as l=R_1 without $
+  fixTikzBody(content) {
+    let out = content.replace(/\[[^\[\]\n]*\]/g, opts => opts.replace(
+      /(^\[|,)(\s*)(bottom|top)(\s+(?:left|right))?(?=\s*(?:,|\]))/g,
+      (m, pre, sp, w, lr) => pre + sp + (w === 'top' ? 'above' : 'below') + (lr || '')
+    ));
+
+    out = out.replace(/(\bnode\b[^;{}]*)\{((?:[^{}]|\{[^{}]*\})*)\}/g, (m, head, text) => head + '{' + this.fixTikzText(text) + '}');
+
+    out = out.replace(
+      /\b((?:l|a|v|i|f)[_^]?|label)=\{?([A-Za-z0-9\\.]+(?:[_^](?:\{[^{}]*\}|[A-Za-z0-9\\]+))+)\}?(?=\s*[,\]])/g,
+      (m, key, val) => key + '={$' + val + '$}'
+    );
+    return out;
+  }
+
+  fixTikzText(text) {
+    const mathToken = /([A-Za-z0-9.]+)?((?:[\^_](?:\{[^{}]*\}|\\[A-Za-z]+|[A-Za-z0-9]+))+)|\\(circ|Omega|omega|mu|pi|theta|phi|alpha|beta|gamma|delta|sigma|lambda|epsilon|varepsilon|rho|tau|infty|times|pm|leq|geq|approx|neq|cdot|rightarrow|to)(?![A-Za-z])/g;
+    return text.split(/(\$[^$]*\$)/).map((seg, i) => {
+      if (i % 2 === 1) return seg;
+      return seg
+        .replace(/(^|[^\\])%/g, '$1\\%')
+        .replace(/(^|[^\\])&/g, '$1\\&')
+        .replace(mathToken, (m, base, scripts, cmd) => {
+          if (cmd) return '$\\' + cmd + '$';
+          const braced = scripts.replace(/([\^_])([A-Za-z0-9]+)/g, '$1{$2}');
+          return '$' + (base || '') + braced + '$';
+        });
+    }).join('');
+  }
+
+  // V38: build the TikZJax preamble from what the diagram really needs instead of a fixed one.
+  // A pgfplots graph (\begin{axis}) used to be rebuilt WITHOUT pgfplots and failed with
+  // "Environment axis undefined" (broken image icon). Libraries declared by the AI (calc, arrows.meta,
+  // positioning...) were also thrown away. Only packages/libraries bundled with TikZJax are emitted.
+  buildTikzPreamble(code, envName, body) {
+    const SUPPORTED_PKGS = ['circuitikz', 'pgfplots', 'tikz-3dplot', 'tikz-cd', 'chemfig', 'array', 'amssymb', 'amsfonts'];
+    const SUPPORTED_LIBS = new Set(['3d', 'angles', 'arrows', 'arrows.meta', 'automata', 'backgrounds', 'bending', 'calc', 'chains', 'circuits', 'circuits.ee', 'circuits.ee.IEC', 'circuits.logic.US', 'circuits.logic.IEC', 'decorations', 'decorations.markings', 'decorations.pathmorphing', 'decorations.pathreplacing', 'decorations.text', 'fit', 'intersections', 'matrix', 'mindmap', 'patterns', 'perspective', 'plothandlers', 'plotmarks', 'positioning', 'quotes', 'scopes', 'shadows', 'shapes', 'shapes.geometric', 'shapes.misc', 'shapes.symbols', 'shapes.arrows', 'shapes.callouts', 'shapes.multipart', 'through', 'trees']);
+    const pkgs = new Set();
+    const libs = new Set(['decorations.markings']);
+
+    for (const m of code.matchAll(/\\usepackage(?:\[[^\]]*\])?\{([^}]*)\}/g)) {
+      for (const n of m[1].split(',')) { const k = n.trim(); if (SUPPORTED_PKGS.includes(k)) pkgs.add(k); }
+    }
+    for (const m of code.matchAll(/\\usetikzlibrary\{([^}]*)\}/g)) {
+      for (const n of m[1].split(',')) { const k = n.trim(); if (SUPPORTED_LIBS.has(k)) libs.add(k); }
+    }
+
+    const needsPgfplots = /\\begin\{(?:axis|semilogxaxis|semilogyaxis|loglogaxis|polaraxis)\}|\\addplot|\\pgfplotsset/.test(body);
+    const circuitish = envName === 'circuitikz' || /\\ctikzset|\bto\[\s*[A-Za-z]|\bnode\[[^\]]*(?:ground|vcc|vee|npn|pnp|nmos|pmos|op amp)/.test(body);
+    if (needsPgfplots) pkgs.add('pgfplots');
+    if (!needsPgfplots || circuitish) pkgs.add('circuitikz');
+    else pkgs.delete('circuitikz');
+
+    // libraries the body obviously relies on (added even if the AI forgot the \usetikzlibrary line)
+    if (/\(\s*\$|\$\s*\(/.test(body)) libs.add('calc');
+    if (/Stealth|Latex\b|Triangle|Straight Barb|Hooks|\{To\b|>\s*=\s*\{/.test(body)) libs.add('arrows.meta');
+    if (/(?:above|below|left|right)[a-z ]*=\s*[^,\]]*\bof\b/.test(body)) libs.add('positioning');
+    if (/shape\s*=\s*(?:diamond|ellipse|trapezium|star|semicircle|regular polygon|kite|dart|cylinder)|[\[,]\s*(?:diamond|ellipse|trapezium|star|semicircle|cylinder)\s*[,\]]/.test(body)) libs.add('shapes.geometric');
+    if (/brace|decoration\s*=\s*\{?\s*(?:ticks|border)/.test(body)) libs.add('decorations.pathreplacing');
+    if (/snake|zigzag|coil|random steps/.test(body)) libs.add('decorations.pathmorphing');
+    if (/name path|intersection of|name intersections/.test(body)) libs.add('intersections');
+    if (/on background layer|background rectangle/.test(body)) libs.add('backgrounds');
+    if (/\bfit\s*=/.test(body)) libs.add('fit');
+    if (/\\matrix|matrix of nodes/.test(body)) libs.add('matrix');
+    if (/pic\s*[\[{][^}]*angle|angle eccentricity/.test(body)) { libs.add('angles'); libs.add('quotes'); }
+
+    const order = ['circuitikz', 'pgfplots', 'tikz-3dplot', 'tikz-cd', 'chemfig', 'array', 'amssymb', 'amsfonts'];
+    const out = [];
+    for (const k of order) if (pkgs.has(k)) out.push('\\usepackage{' + k + '}');
+    out.push('\\usepackage{amsmath}');
+    if (pkgs.has('pgfplots')) out.push('\\pgfplotsset{compat=newest}');
+    out.push('\\usetikzlibrary{' + [...libs].join(',') + '}');
+    return out;
   }
 
   fixCollapsedMath(text) {
