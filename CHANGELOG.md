@@ -6,7 +6,11 @@ Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit d
 - **TikZ preamble from content:** `pgfplots` (plus `\pgfplotsset{compat=newest}`) is added for `\begin{axis}` and `\addplot`; libraries declared by the AI or needed by the body (`calc`, `arrows.meta`, `positioning`, `shapes.geometric`, `decorations.pathreplacing`, ...) are kept or added; only packages and libraries bundled with TikZJax are emitted. Fixes the broken-image icon for pgfplots graphs.
 - `top` / `bottom` placement keys become `above` / `below`; math without `$` in node text is wrapped; `%` and `&` in node text are escaped; `l=R_1` labels are wrapped.
 - **Fix (introduced in V33):** `key=$math$` was rewritten to `key={$2$}`, losing the label text. Now `key={$math$}`.
-- Verified by compiling all 219 TikZ blocks of a real vault with pdflatex: 9 failed before, 0 after, no regressions.
+- **Verified against the real TikZJax engine** (circuitikz 1.0, bundled TeX): a bare `=` or `,` inside math of an option list (`l={$t=0$}`, `l={$R_1, R_2$}`) fails with "Extra }, or forgotten $" even inside braces. Such math is now rewritten to `\mathrel{=}` and `{,}`, which TikZJax accepts.
+- `\textbullet`, `\textdegree`, `\textmu`, `\textohm`, `\texttimes`, `\textpm` (textcomp is not bundled and the compiler hangs) become `$\bullet$`, `$^\circ$`, `$\mu$`, `$\Omega$`, `$\times$`, `$\pm$`.
+- Validation: of the 219 TikZ blocks of a real vault, 18 (in 9 notes) failed in the real TikZJax before the repair; after the repair all 219 render. The failures were pgfplots graphs without the package (3), `=` in label math (7), `decoration={brace}` without its library (4), `top`/`bottom` keys (1), math without `$` in node text (1), `pgfplots` `compat=1.18` (1, TikZJax's pgfplots does not know it, now `compat=newest`) and `\textbullet` (1).
+- Repair now reports "No fixes needed" on a note that is already clean: TikZ blocks were re-emitted with CRLF line endings and Mermaid counted its own re-injected init line, so every run claimed to fix something.
+- New dev tool `tools/tikzjax-check/` renders every TikZ block of a folder with the real TikZJax in a browser.
 - Tests moved into the repository (`npm test`), README and docs rewritten, old recovery copies moved to `archive/`.
 
 ## V37 (1.37.0), 2026-10-22

@@ -64,6 +64,7 @@ npm test               # self-contained tests, no vault needed
 npm run test:latex     # also compiles repaired TikZ blocks with pdflatex (needs a TeX install)
 ```
 
+- [tools/tikzjax-check](tools/tikzjax-check/README.md): renders every TikZ block of a folder with the real TikZJax engine and reports failures (how the V38 TikZ fixes were validated).
 - [CHANGELOG.md](CHANGELOG.md): every version, V1 to V38.
 - [docs/architecture.md](docs/architecture.md): pipeline order and design notes.
 - [docs/prd.md](docs/prd.md) and [docs/tasks.md](docs/tasks.md): requirements and backlog.

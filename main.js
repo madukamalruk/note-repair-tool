@@ -1120,7 +1120,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       return '```mermaid' + fixedLines.join('\n') + '\n' + blockPrefix + '```';
     });
 
-    return { text: fixedText, fixedCount };
+    return { text: fixedText, fixedCount: fixedText === text ? 0 : fixedCount };
   }
 
   fixBrokenHighlights(text) {
@@ -1218,7 +1218,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
                   return line.trim() === '' ? p.trimEnd() : p + line;
               }
               return line;
-          }).join('\r\n');
+          }).join('\n');
 
           // Rebuild clean TikZ code block with standardized preamble
           let lines = [
@@ -1232,7 +1232,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
               p + "```"
           ];
 
-          let replacement = lines.join('\r\n');
+          let replacement = lines.join('\n');
 
           if (match !== replacement) {
               fixedCount++;
@@ -1251,11 +1251,19 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
   //  - math written without $ inside node text (90^\circ, V_s, \Omega) -> "Missing $ inserted"
   //  - unescaped % and & inside node text (% starts a LaTeX comment and eats the closing brace)
   //  - circuitikz labels such as l=R_1 without $
+  //  - bare = and , inside math of option lists (breaks the circuitikz 1.0 label parser)
   fixTikzBody(content) {
     let out = content.replace(/\[[^\[\]\n]*\]/g, opts => opts.replace(
       /(^\[|,)(\s*)(bottom|top)(\s+(?:left|right))?(?=\s*(?:,|\]))/g,
       (m, pre, sp, w, lr) => pre + sp + (w === 'top' ? 'above' : 'below') + (lr || '')
     ));
+
+    // Verified in TikZJax (circuitikz 1.0): a bare '=' or ',' inside math in an option list breaks the key parser
+    // even inside braces ("Extra }, or forgotten $"). '\mathrel{=}' and '{,}' are accepted.
+    out = out.replace(/\[[^\[\]\n]*\]/g, opts => opts.replace(/\$([^$]*)\$/g, (m, inner) => '$' + inner.replace(
+      /\\[^a-zA-Z]|\\mathrel\{=\}|\{,\}|=|,/g,
+      t => (t === '=' ? '\\mathrel{=}' : t === ',' ? '{,}' : t)
+    ) + '$'));
 
     out = out.replace(/(\bnode\b[^;{}]*)\{((?:[^{}]|\{[^{}]*\})*)\}/g, (m, head, text) => head + '{' + this.fixTikzText(text) + '}');
 
@@ -1268,6 +1276,8 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
   fixTikzText(text) {
     const mathToken = /([A-Za-z0-9.]+)?((?:[\^_](?:\{[^{}]*\}|\\[A-Za-z]+|[A-Za-z0-9]+))+)|\\(circ|Omega|omega|mu|pi|theta|phi|alpha|beta|gamma|delta|sigma|lambda|epsilon|varepsilon|rho|tau|infty|times|pm|leq|geq|approx|neq|cdot|rightarrow|to)(?![A-Za-z])/g;
+    // textcomp is not bundled with TikZJax: \textbullet and friends hang the compiler (verified)
+    text = text.replace(/\\text(bullet|degree|mu|ohm|times|pm)(?![A-Za-z])/g, (m, n) => ({ bullet: '$\\bullet$', degree: '$^\\circ$', mu: '$\\mu$', ohm: '$\\Omega$', times: '$\\times$', pm: '$\\pm$' })[n]);
     return text.split(/(\$[^$]*\$)/).map((seg, i) => {
       if (i % 2 === 1) return seg;
       return seg

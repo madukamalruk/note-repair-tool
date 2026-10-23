@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>TikZJax harness</title></head>
+<body>
+<pre id="out">starting...</pre>
+<script>
+// Runs every test of tests.json in its own iframe (3 at a time) and POSTs the results to the server.
+(async function () {
+  const tests = await (await fetch('tests.json')).json();
+  const results = [];
+  const out = document.getElementById('out');
+  const CONCURRENCY = 3;
+  let next = 0, running = 0;
+  window.addEventListener('message', (e) => {
+    const d = e.data;
+    if (!d || d.id === undefined) return;
+    const frame = document.getElementById('f' + d.id);
+    if (frame) frame.remove();
+    results.push(d);
+    running--;
+    out.textContent = results.length + '/' + tests.length + ' done, failed: ' + results.filter(r => !r.ok).length;
+    pump();
+  });
+  function pump() {
+    while (running < CONCURRENCY && next < tests.length) {
+      const t = tests[next++];
+      running++;
+      const f = document.createElement('iframe');
+      f.id = 'f' + t.id;
+      f.style.width = '300px';
+      f.style.height = '100px';
+      f.src = 'frame.html?id=' + encodeURIComponent(t.id);
+      document.body.appendChild(f);
+    }
+    if (results.length === tests.length) {
+      fetch('/result', { method: 'POST', body: JSON.stringify(results) }).then(() => { out.textContent += '\nALL DONE, saved'; });
+    }
+  }
+  pump();
+})();
+</script>
+</body>
+</html>

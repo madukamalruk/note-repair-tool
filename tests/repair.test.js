@@ -197,6 +197,22 @@ test('TikZ inside a callout keeps the prefix on every line', () => {
   for (const line of t.split('\n').filter(l => l.trim() !== '')) if (!line.startsWith('>')) throw new Error('prefix lost: ' + line);
 });
 
+test('TikZJax label parser: = and , inside option math are protected (verified in TikZJax)', () => {
+  const t = repair(fence('\\begin{circuitikz}\n\\draw (0,0) to[R, l={$R_s=50\\,\\Omega$}, i=$a,b$] (3,0);\n\\end{circuitikz}'));
+  has(t, 'l={$R_s\\mathrel{=}50\\,\\Omega$}');
+  has(t, 'i={$a{,}b$}');
+  eq(repair(t), t, 'not idempotent');
+});
+test('= inside node text math is left alone', () => {
+  has(repair(fence('\\begin{tikzpicture}\n\\draw (0,0) -- (2,0) node[midway, left] {$h=2$};\n\\end{tikzpicture}')), '{$h=2$}');
+});
+test('textcomp commands (hang TikZJax) become math', () => {
+  const t = repair(fence('\\begin{tikzpicture}\n\\node at (0,0) {\\textbullet};\n\\node at (1,0) {5\\textdegree};\n\\end{tikzpicture}'));
+  has(t, '{$\\bullet$}');
+  has(t, '5$^\\circ$');
+  hasNot(t, 'textbullet');
+});
+
 // ---- image slots -----------------------------------------------------------------------------------------------------
 const slotDoc = [
   '# T', '',
@@ -273,6 +289,12 @@ test('repairing a messy composite document twice changes nothing', () => {
   ].join('\n');
   const once = repair(doc);
   eq(repair(once), once, 'second run changed the text');
+  const second = plugin.repairText(once);
+  eq(second.changed, false, 'second run reports changes');
+  eq(second.summary, 'No fixes needed', 'second run summary');
+});
+test('repaired TikZ blocks use plain LF line endings', () => {
+  hasNot(repair(fence('\\begin{circuitikz}\n\\draw (0,0) to[R] (2,0);\n\\end{circuitikz}')), '\r');
 });
 
 // ---- optional: compile the repaired TikZ with pdflatex ----------------------------------------------------------------------------------

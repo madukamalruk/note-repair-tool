@@ -81,4 +81,16 @@ An image slot is a line that starts with `[Paste Screenshot`, `[🖼` or `[🤖`
 
 ## Testing
 
-`tests/repair.test.js` stubs the `obsidian` module and calls the plugin directly. With `TEST_LATEX=1` it also compiles repaired TikZ with `pdflatex`, which is how the TikZ fixes were validated against a real vault (219 blocks).
+`tests/repair.test.js` stubs the `obsidian` module and calls the plugin directly. With `TEST_LATEX=1` it also compiles repaired TikZ with `pdflatex`. A normal LaTeX install is not the same as TikZJax (circuitikz 1.0, no `textcomp`, no `siunitx`), so `tools/tikzjax-check/` renders blocks with the real TikZJax engine in a browser; that is the ground truth used for the TikZ rules (219 blocks of a real vault render after repair, 18 failed before).
+
+### Verified TikZJax facts
+
+| Fact | Handling |
+| --- | --- |
+| `=` or `,` inside math of an option list breaks the circuitikz 1.0 label parser, even in braces | Rewritten to `\mathrel{=}` and `{,}` (`fixTikzBody`) |
+| `l=R_1` without `$` fails | Wrapped in `$...$` |
+| `\textbullet` and other textcomp commands hang the compiler | Replaced by math equivalents |
+| `\pgfplotsset{compat=1.18}` is unknown | Preamble emits `compat=newest` |
+| `decoration={brace}` needs `decorations.pathreplacing` | Added automatically |
+| `top` / `bottom` are not TikZ keys | `above` / `below` |
+| `to[nos]`, `o-o` | Work (an older note claimed `o-` is unsupported; not true for `o-o`) |
