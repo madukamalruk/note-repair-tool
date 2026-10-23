@@ -40,7 +40,7 @@ class AuditModal extends Modal {
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
-    console.log('Loading Note Repair Tool Plugin V37...');
+    console.log('Loading Note Repair Tool Plugin V38...');
 
     this.addRibbonIcon('zap', 'Note Repair Tool: Fix Current Note', (evt) => {
       this.repairCurrentNote();
@@ -1419,7 +1419,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     let fixedCount = 0;
     const lines = text.split('\n');
     let inCode = false;
-    const citeRe = /[ \t]*\[(?:cite(?:_start|_end)?(?::[^\]\n]*)?|Sources?\s*\d+[^\]\n]*)\]/g;
+    const citeRe = /[ \t]*\[cite(?::[^\]\n]*)?\]|\[cite_(?:start|end)\]/g;
     const out = lines.map(line => {
       if (line.replace(/^[>\s]*/, '').startsWith('```')) { inCode = !inCode; return line; }
       if (inCode) return line;

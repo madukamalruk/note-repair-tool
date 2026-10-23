@@ -1,0 +1,12 @@
+{
+  "name": "note-repair-tool",
+  "version": "1.38.0",
+  "description": "Obsidian plugin that repairs AI-generated Markdown notes (tables, callouts, Mermaid, TikZ, math).",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "test": "node tests/repair.test.js",
+    "test:latex": "node -e \"process.env.TEST_LATEX='1'; require('./tests/repair.test.js')\""
+  },
+  "author": "Maduk"
+}

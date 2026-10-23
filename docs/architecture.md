@@ -1,50 +1,84 @@
-# System Architecture
-**Project Name:** Note Repair Tool (Obsidian Plugin)
+# Architecture
 
-## 1. High-Level Overview
-The Note Repair Tool is built as a standard Obsidian plugin extending the native `Plugin` class from the `obsidian` module. It heavily utilizes regex-based text processing and modular string manipulation pipelines to parse, detect, and transform malformed markdown text directly within the CodeMirror editor.
+## Overview
 
-## 2. Core Components
+Note Repair Tool is a single-file Obsidian plugin (`main.js`, no dependencies) that extends the `Plugin` class. All repair logic is plain string processing: `repairText(text)` runs a fixed sequence of fixer functions, each of which takes the whole note and returns new text. The editor commands wrap that pipeline.
 
-### 2.1 Plugin Lifecycle Manager (`main.js: onload / onunload`)
-- Registers UI components (Ribbon icons, Editor Context Menus).
-- Registers Commands (`repair-current-note`, `repair-selection`, `undo-repair`) for the Command Palette.
-- Intercepts and binds to active Markdown views to fetch editor instances.
+```mermaid
+flowchart LR
+    A["Command: Repair"] --> B["repairEditor"]
+    B --> C["repairText: fixer pipeline"]
+    C --> D["editor.replaceRange: one undo step"]
+    D --> E["Notice: slots left and audit warnings"]
+    F["Command: Audit"] --> G["auditText: report only"]
+    H["Command: Next slot"] --> I["findPlaceholders and selection"]
+```
 
-### 2.2 Text Pipeline Orchestrator (`repairText`)
-The main processing pipeline that routes the raw markdown string through a sequential series of focused "fixer" functions.
-**Execution Order:**
-1. `fixIndentation`: Normalizes structural spacing.
-2. `fixYaml`: Cleans metadata.
-3. `fixTables`: Reconstructs tables and injects separators.
-4. `fixDataviewConflicts`: Sanitizes `==` and inline fields.
-5. `fixCallouts`: Repairs broken math/quote boundaries.
-6. `fixLatex`: Adjusts `\begin{array}` escaping.
-7. `fixMermaid`: Hardens diagram nodes and syntax.
-8. `fixBrokenHighlights`: Fixes unclosed highlights globally (skipping protected blocks).
-9. `fixSpacing`: Compresses excessive line breaks.
-10. `fixBoldFormatting`: Trims whitespaces inside `**`.
-11. `fixCalloutsInTables`: Shifts table-bound callouts to block level.
-12. `fixYoutubeLinks`: Transpiles links to iframes.
+## Components
 
-### 2.3 CodeMirror Integration (`repairEditor`)
-- Replaces the entire document text using `editor.replaceRange()` instead of `setValue()`.
-- **Reasoning:** `setValue()` destroys the native undo history stack. `replaceRange(newText, start, end)` registers as a single bulk operation, allowing the user to immediately trigger `Ctrl+Z` to revert all 12 pipelines cleanly.
+| Component | Role |
+| --- | --- |
+| `onload` | Registers the ribbon icons, the editor menu items and the commands (`repair-current-note`, `repair-selection`, `undo-repair`, `next-placeholder`, `audit-note`) |
+| `repairEditor` | Runs `repairText` and replaces the whole document with `replaceRange`, so Obsidian's undo history stays intact (`setValue` would destroy it) |
+| `repairText` | The ordered fixer pipeline below |
+| `auditText` | Read-only checks that return `{line, sev, msg, snippet}` items; shown in `AuditModal` and counted in the repair notice |
+| `findPlaceholders`, `nextPlaceholder` | Locate image and screenshot slots and select the paste slot; copy ChatGPT image prompts |
 
-## 3. Key Pipeline Modules (Regex & Parsing Strategies)
+## Fixer pipeline (order matters)
 
-### 3.1 Table Reconstruction (`fixTables`)
-Unlike standard markdown formatters, this module uses a pseudo-state machine:
-- Iterates over lines and identifies potential headers (`|...|`).
-- Performs a lookahead (up to 5 lines) for the `|---|` separator.
-- If a separator is missing entirely, it automatically injects one based on the detected column count.
-- Stitching logic merges subsequent broken lines into a single `|...|` row buffer until the target pipe count is met.
+| Step | Fixer | Purpose |
+| --- | --- | --- |
+| 1 | `fixIndentation` | Normalize CRLF, trailing spaces, tabs |
+| 1b | `fixLeaks` | Remove `[cite: ...]` markers |
+| 1c | `fixMathDelimiters` | `\( \)` and `\[ \]` to `$` and `$$` |
+| 2, 2b | `fixYaml`, `fixDatePlaceholder` | Clean frontmatter; fill `{{date:YYYY-MM-DD}}` |
+| 2.5 | `fixHorizontalRules` | Blank lines around `---` so it never becomes a setext heading |
+| 3 | `fixTables` | Merge split rows, inject missing separators |
+| 4 | `fixEmbeddedCallouts` | Pull callouts out of table rows and paragraphs |
+| 5 | `fixDataviewConflicts` | Protect inline Dataview fields |
+| 6, 6b | `fixCallouts`, `fixCalloutMath` | Callout math boundaries, trailing empty `>`, re-quote math lines that lost the prefix |
+| 7 | `fixLatex` | `\begin{array}` column specs |
+| 8 | `fixMermaid` | Quote labels, plain-text labels, arrows, prefix on closing fences |
+| 9 | `fixBrokenHighlights` | Unclosed `==` outside code and math |
+| 10 | `fixTikz` | Rebuild TikZ blocks (see below) |
+| 10b to 10d | `fixCollapsedMath`, `fixSingleDollarMathBlocks`, `fixMathJaxBlockAttributes` | Math arrays and `\cline` inside blockquotes |
+| 11 | `fixBoldFormatting` | Trim spaces inside `**`, line-local |
+| 12 | `fixCodeBlockLanguages` | Tag untagged fences after a "Code snippet", "Matlab" or "Python" label |
+| 13 | `fixYoutubeLinks` | Links to iframes |
+| 14 | `fixFunctionPlotBlocks` | Heal Functionplot YAML and hallucinated lines |
+| 17 | `fixLooseLists` | Remove blank lines between list items |
+| 18 | `fixSpacing` | At most one blank line outside code |
 
-### 3.2 Diagram Hardening (`fixMermaid`)
-Employs `String.prototype.replace` with callbacks (`/```mermaid([\s\S]*?)```/g`) to isolate the mermaid code from the rest of the document.
-Inside the callback, it applies sub-replacements:
-- Detects `mindmap` vs `graph/flowchart`.
-- Mitigates Obsidian's markdown parser bleed (where Obsidian interprets `+` or `-` as lists inside a diagram) by safely string-replacing specific node signatures (`(("+"))` -> `(("Add"))`).
+## Design rules
 
-### 3.3 Protected Block Traversal (`fixBrokenHighlights`)
-Uses a boolean state machine (`inCodeBlock`, `inMathBlock`) passing through each line to skip destructive string replacements inside sensitive code and math regions. This guarantees that `==` operators in JavaScript snippets or Equations are not accidentally transformed into highlight markers.
+- **Idempotent:** a second run on repaired text must change nothing. The test suite checks this on a composite document.
+- **Protect code:** fixers track code fences (and `$$` blocks where relevant) and do not rewrite their contents unless they are about that block.
+- **Prefix aware:** inside callouts every line starts with `> `. Fixers read the prefix with `extractPrefix` or `/^[>\s]*/` and re-apply it.
+- **No data loss:** fixers rewrite syntax, not content. Removing content (for example `[cite]` markers) is limited to explicit, documented patterns.
+
+## Key modules
+
+### Tables (`fixTables`)
+
+A line-based state machine: find a header row, look ahead up to five lines for the separator, inject one if missing, then stitch following lines into a row buffer until the pipe count matches the header. Escaped pipes are ignored when counting.
+
+### Mermaid (`fixMermaid`)
+
+Runs on each fenced `mermaid` block. Detects `mindmap` versus flowchart, strips `%%{init}` and injects a transparent edge-label style, quotes edge labels, converts real arrows outside quoted labels, and sanitizes labels (`$`, LaTeX commands, bare `&`). A closing fence inside a callout gets the same prefix as the block.
+
+### TikZ (`fixTikz`)
+
+TikZJax cannot take the AI's own preamble, so the block is rebuilt:
+
+1. Find the `tikzpicture` or `circuitikz` environment inside a `tikz`, `circuitikz`, `latex` or `tex` fence.
+2. `fixTikzBody`: wrap `key=$math$` in braces, `top`/`bottom` to `above`/`below`, wrap math in node text, escape `%` and `&`.
+3. `buildTikzPreamble`: choose packages (`circuitikz` or `pgfplots`, `amsmath`) and libraries from the declared preamble plus what the body needs, limited to what TikZJax bundles.
+4. Re-emit the fence with the prefix on every line (blockquote aware).
+
+### Placeholders and audit
+
+An image slot is a line that starts with `[Paste Screenshot`, `[🖼` or `[🤖` (outside code fences). `nextPlaceholder` selects the slot after the cursor; for a `[🤖 Image Prompt ...]` line it copies the text between the first and last double quote and selects the paste slot within the next four lines. `auditText` is deliberately conservative and never edits the note.
+
+## Testing
+
+`tests/repair.test.js` stubs the `obsidian` module and calls the plugin directly. With `TEST_LATEX=1` it also compiles repaired TikZ with `pdflatex`, which is how the TikZ fixes were validated against a real vault (219 blocks).

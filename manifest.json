@@ -1,9 +1,9 @@
 {
   "id": "note-repair-tool",
   "name": "Note Repair Tool",
-  "version": "1.0.0",
+  "version": "1.38.0",
   "minAppVersion": "0.15.0",
-  "description": "Automatically repairs split Markdown tables, broken YAML frontmatter, AI conversational preambles, callout math formatting, and Mermaid syntax errors.",
+  "description": "Repairs AI-generated Markdown notes: tables, callouts, math, Mermaid and TikZ diagrams. Adds an image-slot navigator and a note audit.",
   "author": "Maduk",
   "authorUrl": "",
   "isDesktopOnly": false

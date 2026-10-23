@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD)
 **Project Name:** Note Repair Tool (Obsidian Plugin)
-**Version:** 1.0.0
+**Version:** see [CHANGELOG](../CHANGELOG.md)
 **Target Audience:** University students and researchers using Obsidian to take complex, AI-generated, or OCR-processed markdown notes.
 
 ## 1. Introduction
