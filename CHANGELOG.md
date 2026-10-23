@@ -2,6 +2,12 @@
 
 Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
 
+## V39 (1.39.0), 2026-10-23
+- **Stray code fence fix:** a lone ``` (for example pasted right after the YAML) opened a code block that swallowed the note and flipped every later fence, so text showed as code and diagrams broke. It is detected (an untagged fence with Markdown inside, followed by a tagged fence) and removed. Found in `EE2034 Power Systems I/22 Paper`.
+- **Settings tab:** repair automatically after a large paste (on by default, 400 characters), paste size, notices on or off. One Ctrl+Z undoes an auto-repair; the cursor line is kept.
+- **New command "Repair all notes in this note's folder (with backups)":** dry run, a confirmation listing the notes that would change, and a copy of every original saved in `backups/<timestamp>/` inside the plugin folder before anything is modified. A scan of one vault found 141 notes that had never been repaired.
+- Audit: warns about an untagged code block that contains Markdown (stray fence); TikZ, Mermaid and Functionplot blocks inside callouts are now info instead of a warning, because they render while every line keeps its `> ` prefix.
+
 ## V38 (1.38.0), 2026-10-23
 - **TikZ preamble from content:** `pgfplots` (plus `\pgfplotsset{compat=newest}`) is added for `\begin{axis}` and `\addplot`; libraries declared by the AI or needed by the body (`calc`, `arrows.meta`, `positioning`, `shapes.geometric`, `decorations.pathreplacing`, ...) are kept or added; only packages and libraries bundled with TikZJax are emitted. Fixes the broken-image icon for pgfplots graphs.
 - `top` / `bottom` placement keys become `above` / `below`; math without `$` in node text is wrapped; `%` and `&` in node text are escaped; `l=R_1` labels are wrapped.

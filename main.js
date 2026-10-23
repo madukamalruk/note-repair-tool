@@ -1,4 +1,4 @@
-const { Plugin, Notice, MarkdownView, Modal } = require('obsidian');
+const { Plugin, Notice, MarkdownView, Modal, PluginSettingTab, Setting } = require('obsidian');
 
 // V37: clickable audit report
 class AuditModal extends Modal {
@@ -38,9 +38,83 @@ class AuditModal extends Modal {
   }
 }
 
+// V39: settings
+const DEFAULT_SETTINGS = {
+  autoRepairOnPaste: true,
+  pasteThreshold: 400,
+  showNotices: true,
+};
+
+class NoteRepairSettingTab extends PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl('h2', { text: 'Note Repair Tool' });
+
+    new Setting(containerEl)
+      .setName('Repair automatically after pasting')
+      .setDesc('When you paste a large block of text (for example a chunk from Gemini), the note is repaired right after the paste. One Ctrl+Z undoes it.')
+      .addToggle(t => t
+        .setValue(this.plugin.settings.autoRepairOnPaste)
+        .onChange(async (v) => { this.plugin.settings.autoRepairOnPaste = v; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl)
+      .setName('Paste size that triggers the repair')
+      .setDesc('Number of characters. Small pastes (a word, a formula) never trigger it.')
+      .addText(t => t
+        .setValue(String(this.plugin.settings.pasteThreshold))
+        .onChange(async (v) => {
+          const n = parseInt(v, 10);
+          if (!isNaN(n) && n >= 0) { this.plugin.settings.pasteThreshold = n; await this.plugin.saveSettings(); }
+        }));
+
+    new Setting(containerEl)
+      .setName('Show a notice after each repair')
+      .setDesc('The notice lists what was fixed, the image slots left and the audit warnings.')
+      .addToggle(t => t
+        .setValue(this.plugin.settings.showNotices)
+        .onChange(async (v) => { this.plugin.settings.showNotices = v; await this.plugin.saveSettings(); }));
+  }
+}
+
+// V39: simple confirm dialog
+class ConfirmModal extends Modal {
+  constructor(app, title, lines, confirmText, onConfirm) {
+    super(app);
+    this.title = title;
+    this.lines = lines;
+    this.confirmText = confirmText;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl('h2', { text: this.title });
+    for (const l of this.lines) contentEl.createEl('p', { text: l });
+    const row = contentEl.createEl('div');
+    const ok = row.createEl('button', { text: this.confirmText });
+    ok.addEventListener('click', () => { this.close(); this.onConfirm(); });
+    const cancel = row.createEl('button', { text: 'Cancel' });
+    cancel.style.marginLeft = '8px';
+    cancel.addEventListener('click', () => this.close());
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
-    console.log('Loading Note Repair Tool Plugin V38...');
+    console.log('Loading Note Repair Tool Plugin V39...');
+    await this.loadSettings();
+    this.addSettingTab(new NoteRepairSettingTab(this.app, this));
 
     this.addRibbonIcon('zap', 'Note Repair Tool: Fix Current Note', (evt) => {
       this.repairCurrentNote();
@@ -107,6 +181,30 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       }
     });
 
+    this.addCommand({
+      id: 'repair-folder',
+      name: 'Repair all notes in this note\'s folder (with backups)',
+      callback: () => {
+        this.repairFolderCommand();
+      }
+    });
+
+    // V39: repair right after a large paste (a chunk from Gemini). Never throws into Obsidian.
+    this.registerEvent(
+      this.app.workspace.on('editor-paste', (evt, editor) => {
+        try {
+          if (!this.settings.autoRepairOnPaste) return;
+          const pasted = evt && evt.clipboardData ? evt.clipboardData.getData('text/plain') : '';
+          if (!pasted || pasted.length < this.settings.pasteThreshold) return;
+          setTimeout(() => {
+            try { this.repairEditor(editor, { auto: true }); } catch (e) { console.error('Note Repair Tool auto-repair failed', e); }
+          }, 400);
+        } catch (e) {
+          console.error('Note Repair Tool paste hook failed', e);
+        }
+      })
+    );
+
     this.registerEvent(
       this.app.workspace.on('editor-menu', (menu, editor, view) => {
         menu.addItem((item) => {
@@ -157,10 +255,11 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     }
   }
 
-  repairEditor(editor) {
+  repairEditor(editor, opts = {}) {
+    const notify = (msg, ms) => { if (this.settings && this.settings.showNotices === false && opts.auto) return; new Notice(msg, ms); };
     const content = editor.getValue();
     if (!content || !content.trim()) {
-      new Notice('Note is empty!');
+      if (!opts.auto) new Notice('Note is empty!');
       return;
     }
 
@@ -172,6 +271,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       // allowing Ctrl+Z or our Undo button to revert the whole fix instantly.
       const lastLine = editor.lastLine();
       const lastLineLength = editor.getLine(lastLine).length;
+      const cursor = editor.getCursor();
       
       editor.replaceRange(
         result.text,
@@ -179,8 +279,12 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         { line: lastLine, ch: lastLineLength }
       );
       
-      new Notice(`\u26A1 Note Repaired!\n${result.summary}${this.statusSuffix(editor)}`, 7000);
-    } else {
+      try {
+        const lines = editor.lastLine();
+        editor.setCursor({ line: Math.min(cursor.line, lines), ch: 0 });
+      } catch (e) { /* cursor restore is best effort */ }
+      notify(`\u26A1 Note Repaired!\n${result.summary}${this.statusSuffix(editor)}`, 7000);
+    } else if (!opts.auto) {
       new Notice(`\u2714 Note is already clean!${this.statusSuffix(editor)}`, 5000);
     }
   }
@@ -197,6 +301,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const indentRes = this.fixIndentation(text);
     text = indentRes.text;
     if (indentRes.fixedCount > 0) changes.push('Fixed Indentation/Spacing');
+
+    // 1a. V39: remove a stray ``` that flips all later code fences
+    const strayRes = this.fixStrayFences(text);
+    if (strayRes.fixedCount > 0) { text = strayRes.text; changes.push(`Removed ${strayRes.fixedCount} stray code fence(s)`); }
 
     // 1b. V36: strip AI source/citation leaks and pasted chunk-boundary lines
     const leakRes = this.fixLeaks(text);
@@ -1291,6 +1399,124 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     }).join('');
   }
 
+  // V39: a stray bare ``` (often pasted from the AI chat UI, for example right after the YAML) opens a code
+  // block that swallows the note and flips every later fence (diagrams then show as code, text as diagrams).
+  // Signature: an UNTAGGED 3-backtick fence whose content looks like Markdown (headings, tables, callouts)
+  // and which is followed by a TAGGED fence (```tikz, ```mermaid, ...) before it ever closes.
+  fixStrayFences(text) {
+    const lines = text.split('\n');
+    const fenceRe = /^([ \t>]*)(`{3,})(.*)$/;
+    const looksLikeMarkdown = (from, to) => {
+      let score = 0;
+      for (let i = from + 1; i < to; i++) {
+        const l = lines[i].replace(/^[ \t>]*/, '');
+        if (/^#{1,6} \S/.test(l) || /^\|.*\|\s*$/.test(lines[i].trim()) || /^\[!\w+\]/.test(l) || /^[*-] \*\*/.test(l)) score++;
+      }
+      return score >= 2;
+    };
+    let fixedCount = 0;
+    for (let guard = 0; guard < 50; guard++) {
+      let openIdx = -1;      // untagged block that is currently open
+      let openLen = 0;
+      let taggedLen = 0;     // length of the tagged fence that is currently open (0 = none)
+      let stray = -1;
+      for (let i = 0; i < lines.length && stray < 0; i++) {
+        const m = lines[i].match(fenceRe);
+        if (!m) continue;
+        const len = m[2].length;
+        const info = m[3].trim();
+        if (taggedLen) { if (info === '' && len >= taggedLen) taggedLen = 0; continue; }
+        if (openIdx >= 0) {
+          if (info === '' && len >= openLen) { openIdx = -1; continue; }
+          if (len === 3 && openLen === 3 && info !== '' && looksLikeMarkdown(openIdx, i)) stray = openIdx;
+          continue;
+        }
+        if (info === '') { openIdx = i; openLen = len; } else { taggedLen = len; }
+      }
+      if (stray < 0) break;
+      lines.splice(stray, 1);
+      fixedCount++;
+    }
+    return { text: lines.join('\n'), fixedCount };
+  }
+
+  // ─── V39 ─────────────────────────────────────────────────────────────
+
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  }
+
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+
+  // Dry run: which notes of a folder (recursive) would change?
+  async planFolderRepair(folderPath) {
+    const prefix = folderPath ? folderPath.replace(/\/$/, '') + '/' : '';
+    const files = this.app.vault.getMarkdownFiles().filter(f => f.path.startsWith(prefix));
+    const plan = [];
+    for (const file of files) {
+      const orig = await this.app.vault.read(file);
+      const res = this.repairText(orig);
+      if (res.changed) plan.push({ file, orig, text: res.text, summary: res.summary });
+    }
+    return { total: files.length, plan };
+  }
+
+  async ensureDir(dir) {
+    const adapter = this.app.vault.adapter;
+    let cur = '';
+    for (const part of dir.split('/')) {
+      cur = cur ? cur + '/' + part : part;
+      if (!(await adapter.exists(cur))) await adapter.mkdir(cur);
+    }
+  }
+
+  // Applies a plan. The original of every note is saved first, inside the plugin folder.
+  async applyFolderRepair(plan) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const pluginDir = (this.manifest && this.manifest.dir) || '.obsidian/plugins/note-repair-tool';
+    const base = pluginDir + '/backups/' + stamp;
+    let done = 0;
+    for (const item of plan) {
+      const target = base + '/' + item.file.path;
+      await this.ensureDir(target.split('/').slice(0, -1).join('/'));
+      await this.app.vault.adapter.write(target, item.orig);
+      await this.app.vault.modify(item.file, item.text);
+      done++;
+    }
+    return { done, backupDir: base };
+  }
+
+  async repairFolderCommand() {
+    const active = this.app.workspace.getActiveFile();
+    let folder = active && active.parent ? active.parent.path : '';
+    if (folder === '/') folder = '';
+    new Notice('Checking notes...');
+    const { total, plan } = await this.planFolderRepair(folder);
+    if (plan.length === 0) {
+      new Notice(`✔ All ${total} notes in "${folder || 'the vault'}" are already clean.`);
+      return;
+    }
+    const names = plan.slice(0, 12).map(p => '• ' + p.file.path.slice(folder ? folder.length + 1 : 0));
+    if (plan.length > 12) names.push('... and ' + (plan.length - 12) + ' more');
+    new ConfirmModal(
+      this.app,
+      'Repair notes in "' + (folder || 'the vault') + '"?',
+      [plan.length + ' of ' + total + ' notes would change:', ...names, 'The original of every note is saved first in the plugin folder (backups).'],
+      'Repair ' + plan.length + ' notes',
+      async () => {
+        try {
+          const r = await this.applyFolderRepair(plan);
+          new Notice(`⚡ Repaired ${r.done} notes.\nBackups: ${r.backupDir}`, 10000);
+        } catch (e) {
+          console.error(e);
+          new Notice('Folder repair stopped: ' + e.message, 10000);
+        }
+      }
+    ).open();
+  }
+
   // V38: build the TikZJax preamble from what the diagram really needs instead of a fixed one.
   // A pgfplots graph (\begin{axis}) used to be rebuilt WITHOUT pgfplots and failed with
   // "Environment axis undefined" (broken image icon). Libraries declared by the AI (calc, arrows.meta,
@@ -1660,7 +1886,15 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         if (!inCode) {
           inCode = true;
           codeLang = bare.slice(3).trim().toLowerCase();
-          if (quoted && /^(mermaid|tikz|circuitikz|functionplot)/.test(codeLang)) add(i, 'warn', `${codeLang} block inside a callout: it will not render`);
+          if (codeLang === '') {
+            // an untagged block full of Markdown is almost always a stray ``` that swallows the note
+            let md = 0;
+            for (let j = i + 1; j < lines.length && !/^[ \t>]*```\s*$/.test(lines[j]); j++) {
+              if (/^[ \t>]*#{1,6} \S/.test(lines[j]) || /^\|.*\|\s*$/.test(lines[j].trim()) || /^[ \t>]*\[!\w+\]/.test(lines[j])) md++;
+            }
+            if (md >= 2) add(i, 'warn', 'untagged code block that contains Markdown: stray ``` fence? (run Repair)');
+          }
+          if (quoted && /^(mermaid|tikz|circuitikz|functionplot)/.test(codeLang)) add(i, 'info', `${codeLang} block inside a callout (renders only while every line keeps its '> ' prefix)`);
         } else {
           inCode = false;
           codeLang = '';

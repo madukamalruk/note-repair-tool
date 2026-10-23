@@ -1,6 +1,6 @@
 {
   "name": "note-repair-tool",
-  "version": "1.38.0",
+  "version": "1.39.0",
   "description": "Obsidian plugin that repairs AI-generated Markdown notes (tables, callouts, Mermaid, TikZ, math).",
   "private": true,
   "main": "main.js",

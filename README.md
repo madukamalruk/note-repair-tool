@@ -28,7 +28,18 @@ Everything is applied as one editor change, so a single **Ctrl+Z** undoes the wh
 | **Repair selected text** | Same pipeline, selection only |
 | **Next image/screenshot slot** | Jumps to the next `[Paste Screenshot ...]` or `[🖼️ Paste ... here]` slot and selects it, so `Ctrl+V` replaces it. On a `[🤖 Image Prompt #N - ...: "..."]` line it copies the prompt to the clipboard and selects the paste slot below it |
 | **Audit note** | Report only. Lists possible skipped steps, English-only blocks, leftover `[cite]` or date placeholders, unbalanced bold, table pipe mismatches, unsupported Functionplot syntax, code blocks inside callouts and unclosed `$$` or fences. Click an item to jump to its line |
+| **Repair all notes in this note's folder (with backups)** | Dry run, then a confirmation listing the notes that would change. The original of every note is saved in `backups/<timestamp>/` inside the plugin folder first |
 | **Undo last editor action** | Convenience wrapper for undo |
+
+## Settings
+
+Settings → Community plugins → Note Repair Tool:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| Repair automatically after pasting | on | After a large paste (a chunk from an AI) the note is repaired right away; one Ctrl+Z undoes it |
+| Paste size that triggers the repair | 400 characters | Small pastes never trigger it |
+| Show a notice after each repair | on | Lists the fixes, image slots left and audit warnings |
 
 Assign hotkeys in **Settings → Hotkeys** (search "Note Repair Tool").
 

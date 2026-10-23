@@ -22,6 +22,8 @@ flowchart LR
 | `repairEditor` | Runs `repairText` and replaces the whole document with `replaceRange`, so Obsidian's undo history stays intact (`setValue` would destroy it) |
 | `repairText` | The ordered fixer pipeline below |
 | `auditText` | Read-only checks that return `{line, sev, msg, snippet}` items; shown in `AuditModal` and counted in the repair notice |
+| `planFolderRepair`, `applyFolderRepair` | Dry run and backed-up repair of every note in a folder |
+| `NoteRepairSettingTab`, `editor-paste` hook | Settings and the optional auto-repair after a large paste |
 | `findPlaceholders`, `nextPlaceholder` | Locate image and screenshot slots and select the paste slot; copy ChatGPT image prompts |
 
 ## Fixer pipeline (order matters)
@@ -29,6 +31,7 @@ flowchart LR
 | Step | Fixer | Purpose |
 | --- | --- | --- |
 | 1 | `fixIndentation` | Normalize CRLF, trailing spaces, tabs |
+| 1a | `fixStrayFences` | Remove a stray bare ``` that would flip every later code fence |
 | 1b | `fixLeaks` | Remove `[cite: ...]` markers |
 | 1c | `fixMathDelimiters` | `\( \)` and `\[ \]` to `$` and `$$` |
 | 2, 2b | `fixYaml`, `fixDatePlaceholder` | Clean frontmatter; fill `{{date:YYYY-MM-DD}}` |

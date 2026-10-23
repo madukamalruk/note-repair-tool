@@ -6,3 +6,6 @@ node_modules/
 tools/tikzjax-check/tikzjax.js
 tools/tikzjax-check/tests.json
 tools/tikzjax-check/result_*.json
+
+# folder-repair backups (private notes)
+backups/

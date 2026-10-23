@@ -12,10 +12,45 @@ const origLoad = Module._load;
 Module._load = function (request, ...rest) {
   if (request === 'obsidian') {
     return {
-      Plugin: class { constructor() { this.cmds = []; } addCommand(c) { this.cmds.push(c); } addRibbonIcon() {} registerEvent() {} },
+      Plugin: class {
+        constructor() {
+          this.cmds = [];
+          this.handlers = {};
+          this.saved = null;
+          this.files = {};      // path -> text (fake vault)
+          this.written = {};    // adapter writes (backups)
+          this.dirs = new Set();
+          this.manifest = { dir: '.obsidian/plugins/note-repair-tool' };
+          const self = this;
+          this.app = {
+            workspace: {
+              on: (name, cb) => { self.handlers[name] = cb; return {}; },
+              getActiveFile: () => ({ path: 'Sem/Note.md', parent: { path: 'Sem' } }),
+            },
+            vault: {
+              getMarkdownFiles: () => Object.keys(self.files).map(p => ({ path: p })),
+              read: async (f) => self.files[f.path],
+              modify: async (f, t) => { self.files[f.path] = t; },
+              adapter: {
+                exists: async (p) => self.dirs.has(p),
+                mkdir: async (p) => { self.dirs.add(p); },
+                write: async (p, t) => { self.written[p] = t; },
+              },
+            },
+          };
+        }
+        addCommand(c) { this.cmds.push(c); }
+        addRibbonIcon() {}
+        addSettingTab() {}
+        registerEvent() {}
+        async loadData() { return null; }
+        async saveData(d) { this.saved = d; }
+      },
       Notice: class {},
       MarkdownView: class {},
       Modal: class { constructor(app) { this.app = app; } open() {} close() {} },
+      PluginSettingTab: class { constructor(app, plugin) { this.app = app; this.plugin = plugin; } },
+      Setting: class {},
     };
   }
   return origLoad.call(this, request, ...rest);
@@ -48,10 +83,61 @@ const hasNot = (t, s) => { if (t.includes(s)) throw new Error('unexpected ' + JS
 const fence = (body) => '```tikz\n\\begin{document}\n' + body + '\n\\end{document}\n```\n';
 
 // ---- plugin wiring ------------------------------------------------------------------------------
-test('commands are registered', () => {
-  plugin.onload();
-  for (const id of ['repair-current-note', 'repair-selection', 'next-placeholder', 'audit-note']) {
+test('commands are registered', async () => {
+  await plugin.onload();
+  for (const id of ['repair-current-note', 'repair-selection', 'next-placeholder', 'audit-note', 'repair-folder']) {
     if (!plugin.cmds.some(c => c.id === id)) throw new Error('missing command ' + id);
+  }
+  eq(plugin.settings.autoRepairOnPaste, true, 'auto-repair default');
+  eq(plugin.settings.pasteThreshold, 400, 'threshold default');
+});
+test('auto-repair after a large paste (and not after a small one or when switched off)', async () => {
+  const h = plugin.handlers['editor-paste'];
+  if (!h) throw new Error('paste handler not registered');
+  let calls = 0;
+  const realRepair = plugin.repairEditor;
+  plugin.repairEditor = () => { calls++; };
+  const realTimeout = global.setTimeout;
+  global.setTimeout = (fn) => { fn(); return 0; };
+  try {
+    const evt = (text) => ({ clipboardData: { getData: () => text } });
+    h(evt('x'.repeat(50)), {});
+    eq(calls, 0, 'small paste triggered a repair');
+    h(evt('x'.repeat(500)), {});
+    eq(calls, 1, 'large paste did not trigger a repair');
+    h({ clipboardData: { getData: () => '' } }, {});
+    eq(calls, 1, 'image paste (no text) triggered a repair');
+    plugin.settings.autoRepairOnPaste = false;
+    h(evt('x'.repeat(500)), {});
+    eq(calls, 1, 'disabled setting still repaired');
+    plugin.settings.autoRepairOnPaste = true;
+    h(null, {});   // malformed event must not throw
+  } finally {
+    plugin.repairEditor = realRepair;
+    global.setTimeout = realTimeout;
+  }
+});
+test('folder repair: dry run lists changed notes, apply backs up the originals first', async () => {
+  plugin.files = {
+    'Sem/A.md': '# A\n\n* one\n\n* two\n',
+    'Sem/B.md': '# B\n\ntext\n',
+    'Sem/Sub/C.md': '---\ntags: [a]\nDate: {{date:YYYY-MM-DD}}\n---\n# C\n',
+    'Other/D.md': '# D\n\n* one\n\n* two\n',
+  };
+  const orig = { ...plugin.files };
+  const { total, plan } = await plugin.planFolderRepair('Sem');
+  eq(total, 3, 'files in folder');
+  eq(plan.map(p => p.file.path).sort().join(), 'Sem/A.md,Sem/Sub/C.md', 'changed notes');
+  eq(plugin.files['Sem/A.md'], orig['Sem/A.md'], 'dry run must not modify notes');
+  const r = await plugin.applyFolderRepair(plan);
+  eq(r.done, 2, 'applied');
+  has(plugin.files['Sem/A.md'], '* one\n* two');
+  eq(plugin.files['Other/D.md'], orig['Other/D.md'], 'note outside the folder was touched');
+  const backups = Object.keys(plugin.written);
+  eq(backups.length, 2, 'backups written');
+  for (const b of backups) {
+    const rel = b.split('/backups/')[1].split('/').slice(1).join('/');
+    eq(plugin.written[b], orig[rel], 'backup of ' + rel + ' differs from the original');
   }
 });
 
@@ -211,6 +297,23 @@ test('textcomp commands (hang TikZJax) become math', () => {
   has(t, '{$\\bullet$}');
   has(t, '5$^\\circ$');
   hasNot(t, 'textbullet');
+});
+
+test('a stray ``` after the YAML is removed so the later fences pair up', () => {
+  const doc = '---\ntags: [a]\n---\n\n```\n\n## 1. Inventory\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n## 2. Next\n\n```tikz\n\\begin{document}\n\\begin{circuitikz}\n\\draw (0,0) to[R] (2,0);\n\\end{circuitikz}\n\\end{document}\n```\n\ntext\n';
+  const t = repair(doc);
+  eq((t.match(/^```/gm) || []).length, 2, 'fence count');
+  hasNot(t, '```\n\n## 1. Inventory');
+  has(t, '## 1. Inventory');
+  eq(repair(t), t, 'not idempotent');
+});
+test('legitimate untagged and four-backtick blocks are left alone', () => {
+  const doc = '# H\n\n```\nplain text\nmore text\n```\n\n````text\nPrompt\n\n## Heading in a prompt\n\n| a | b |\n| --- | --- |\n\n```tikz\n\\draw (0,0);\n```\n````\n';
+  eq((repair(doc).match(/`{3,}/g) || []).length, (doc.match(/`{3,}/g) || []).length, 'fences changed');
+});
+test('audit flags an untagged block that contains Markdown', () => {
+  const issues = plugin.auditText('```\n\n## A\n\n| a | b |\n| --- | --- |\n\n```tikz\nx\n```\n');
+  if (!issues.some(i => /stray/.test(i.msg))) throw new Error(JSON.stringify(issues));
 });
 
 // ---- image slots -----------------------------------------------------------------------------------------------------
