@@ -15,41 +15,7 @@ An Obsidian plugin that automatically repairs and normalizes broken Markdown syn
 - **Math Delimiters (V37):** Converts `\( \)` and `\[ \]` (not rendered by Obsidian) to `$` and `$$`, and re-quotes math lines inside callouts that lost their `> ` prefix.
 - **Tidy Output (V36/V37):** Line-local bold repair, at most one blank line outside code, tight bullet lists, no trailing empty `>` in callouts, plain-text Mermaid labels.
 
-- **TikZ Compile Fixes (V38):** The preamble is now built from what the diagram needs (pgfplots for `egin{axis}` graphs, calc/arrows.meta/positioning/... libraries), `top`/`bottom` placement keys become `above`/`below`, math in node text gets `# Note Repair Tool (Obsidian Plugin)
-
-An Obsidian plugin that automatically repairs and normalizes broken Markdown syntax, specifically tailored for issues commonly caused by AI assistants, OCR, or copy-pasting complex formats. 
-
-## Features
-- **Table Repair:** Fixes broken multiline rows and automatically injects missing table separators (`|---|---|`).
-- **Mermaid Diagram Fixes:** Fixes "Unsupported markdown: list" errors in Obsidian by escaping bare `+` and `-` list markers inside nodes. Removes invisible characters and fixes internal quotes in mindmaps.
-- **YAML Frontmatter Cleaning:** Cleans duplicate or broken YAML metadata headers.
-- **Callout Fixes:** Extracts nested callouts from inside tables to the block level and fixes broken math blocks (`$$>`).
-- **Highlight Repair:** Fixes dangling or broken highlights (`==`), explicitly ignoring code and math blocks.
-- **Dataview Protection:** Wraps inline Dataview fields (`[field::value]`) in backticks to prevent formatting conflicts.
-- **Formatting Cleanup:** Normalizes indentation, trims excessive empty lines, and correctly formats bold text.
-- **YouTube Embeds:** Automatically converts standard Markdown YouTube links into embedded `<iframe>` videos.
-- **AI Leak Cleanup (V36):** Removes `[cite: ...]` markers and fills the literal `{{date:YYYY-MM-DD}}` in the YAML.
-- **Math Delimiters (V37):** Converts `\( \)` and `\[ \]` (not rendered by Obsidian) to `$` and `$$`, and re-quotes math lines inside callouts that lost their `> ` prefix.
-- **Tidy Output (V36/V37):** Line-local bold repair, at most one blank line outside code, tight bullet lists, no trailing empty `>` in callouts, plain-text Mermaid labels.
-
-, `%`/`&` are escaped, and `l=$R_1# Note Repair Tool (Obsidian Plugin)
-
-An Obsidian plugin that automatically repairs and normalizes broken Markdown syntax, specifically tailored for issues commonly caused by AI assistants, OCR, or copy-pasting complex formats. 
-
-## Features
-- **Table Repair:** Fixes broken multiline rows and automatically injects missing table separators (`|---|---|`).
-- **Mermaid Diagram Fixes:** Fixes "Unsupported markdown: list" errors in Obsidian by escaping bare `+` and `-` list markers inside nodes. Removes invisible characters and fixes internal quotes in mindmaps.
-- **YAML Frontmatter Cleaning:** Cleans duplicate or broken YAML metadata headers.
-- **Callout Fixes:** Extracts nested callouts from inside tables to the block level and fixes broken math blocks (`$$>`).
-- **Highlight Repair:** Fixes dangling or broken highlights (`==`), explicitly ignoring code and math blocks.
-- **Dataview Protection:** Wraps inline Dataview fields (`[field::value]`) in backticks to prevent formatting conflicts.
-- **Formatting Cleanup:** Normalizes indentation, trims excessive empty lines, and correctly formats bold text.
-- **YouTube Embeds:** Automatically converts standard Markdown YouTube links into embedded `<iframe>` videos.
-- **AI Leak Cleanup (V36):** Removes `[cite: ...]` markers and fills the literal `{{date:YYYY-MM-DD}}` in the YAML.
-- **Math Delimiters (V37):** Converts `\( \)` and `\[ \]` (not rendered by Obsidian) to `$` and `$$`, and re-quotes math lines inside callouts that lost their `> ` prefix.
-- **Tidy Output (V36/V37):** Line-local bold repair, at most one blank line outside code, tight bullet lists, no trailing empty `>` in callouts, plain-text Mermaid labels.
-
- labels keep their content (V33 bug fixed).
+- **TikZ Compile Fixes (V38):** The preamble is now built from what the diagram needs (pgfplots for `\begin{axis}` graphs, calc/arrows.meta/positioning libraries), `top`/`bottom` placement keys become `above`/`below`, math in node text gets `$...$`, `%` and `&` are escaped, and `l=$R_1$` labels keep their content (V33 bug fixed).
 
 ## Commands
 - **Repair current note:** the main fixer. The notice also shows how many image slots are left and how many audit warnings exist.
