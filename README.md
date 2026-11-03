@@ -8,9 +8,9 @@ It was built for a Sinhala and English engineering study workflow (see [Semester
 
 | Area | What it repairs |
 | --- | --- |
-| **Tables** | Rows split over several lines, missing separator rows, line-wrapped pipes inside callouts |
+| **Tables** | Rows split over several lines or at the wrong pipe, blank-line splits, missing separator rows, tables glued together, lost `> ` prefixes inside callouts, `\|` in math cells, trailing empty rows |
 | **Callouts** | Callouts glued to table rows or paragraphs, math lines that lost their `> ` prefix, trailing empty `>` lines, fold markers (`[!example]+`) and the `abstract`, `important`, `summary`, `tldr`, `attention` types |
-| **Math** | `\( \)` and `\[ \]` (not rendered by Obsidian) converted to `$` and `$$`, single `$` multi-line blocks, `\cline` stripped by Obsidian, collapsed arrays |
+| **Math** | `\( \)` and `\[ \]` (not rendered by Obsidian) converted to `$` and `$$`, single `$` multi-line blocks, `\cline` stripped by Obsidian, collapsed arrays; MathJax error patterns (`\left{`, bare `%`, bare `&`, spaces inside `$`); LaTeX written as plain text is wrapped in `$` |
 | **Mermaid** | Unquoted labels, `&`, `$` and LaTeX in labels, bare `+` and `-` nodes, reversed arrows, mindmap quotes, no blank-line growth on repeated runs |
 | **TikZ / Circuitikz** | Rebuilds the block for [TikZJax](https://github.com/artisticat1/obsidian-tikzjax) with a preamble derived from the diagram: `pgfplots` for `axis` graphs, automatic libraries (`calc`, `arrows.meta`, `positioning`, `decorations.pathreplacing`, ...), braces around attribute values containing `=` or `,`, `top`/`bottom` to `above`/`below`, math in node text, escaped `%` and `&`, `l=R_1` labels |
 | **Functionplot** | Hallucinated `fn:` and `color:` lines, `#` comments, `<=` and `>=` |
@@ -18,7 +18,7 @@ It was built for a Sinhala and English engineering study workflow (see [Semester
 | **AI leaks** | `[cite: ...]` and `[cite_start]` markers removed |
 | **Other** | Dataview field protection, `==highlight==` repair, YouTube links to embeds |
 
-Everything is applied as one editor change, so a single **Ctrl+Z** undoes the whole repair.
+Everything is applied as one editor change, so a single **Ctrl+Z** undoes the whole repair. The pipeline runs until the text stops changing, so repairing a repaired note never changes it again.
 
 ## Commands
 
@@ -76,6 +76,7 @@ npm run test:latex     # also compiles repaired TikZ blocks with pdflatex (needs
 ```
 
 - [tools/tikzjax-check](tools/tikzjax-check/README.md): renders every TikZ block of a folder with the real TikZJax engine and reports failures (how the V38 TikZ fixes were validated).
+- [tools/vault-audit](tools/vault-audit/README.md): audits a whole vault (formulas checked with the real MathJax, tables, fences), dry-runs the repair and verifies idempotency and that no content is lost.
 - [CHANGELOG.md](CHANGELOG.md): every version, V1 to V38.
 - [docs/architecture.md](docs/architecture.md): pipeline order and design notes.
 - [docs/prd.md](docs/prd.md) and [docs/tasks.md](docs/tasks.md): requirements and backlog.

@@ -2,6 +2,17 @@
 
 Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
 
+## V40 (1.40.0), 2026-11-03
+Found by auditing a whole real vault (182 notes) and validating every formula with the real MathJax 3.2.2 (the engine family Obsidian bundles).
+- **Idempotent by construction:** `repairText` now runs the pipeline until the text stops changing (at most 6 passes). Before, 18 notes needed a second or third Repair (a removed stray fence exposed an empty `>`, a fixed table exposed a callout, ...). Over the whole vault a second pass now changes nothing.
+- **Data-loss bug fixed in the YAML fixer:** any `---` within the first 10 lines (a horizontal rule) was taken as the frontmatter opening; everything above it was deleted and the `#` of the headings below it was stripped. Notes without frontmatter lost their first paragraphs. Only a real frontmatter block (first non-blank line, YAML-looking body) is touched now.
+- **MathJax error prevention (`fixMathJaxErrors`):** `\left{ ... \right}` becomes `\left\{ ... \right\}` (MathJax error "Missing or unrecognized delimiter"), an unescaped `%` (a TeX comment that silently cuts the formula) becomes `\%`, a bare `&` in display math without an alignment environment is wrapped in `aligned` (inline: `\&`), and spaces just inside `$ ... $` are removed. Currency such as "$5 and $10" and valid math are left alone.
+- **Broken tables (`fixTableStructure`):** cells of one row on separate lines (the `| **Base** |  |  |` + orphan lines pattern) are put back together, rows cut at the wrong pipe are re-chunked to the header width, rows split by a blank line rejoin, a table that starts directly under another table gets a blank line, rows and separators inside a callout get their `> ` prefix back, trailing all-empty rows are dropped, and a raw `|` inside real math becomes `\vert` ("$2000 | $8000" money is not touched). Intentionally ragged tables are left alone.
+- The old stitching pass no longer glues a complete short row (ending in `|`) to the next row.
+- **Plain-text LaTeX (`fixNakedLatex`):** `I_C = \beta I_B` written without `$` in prose is wrapped (`$I_C = \beta I_B$`). Conservative: only lines without any `$`, only runs containing a known command or a short sub/superscript, never snake_case words.
+- Mermaid labels: `\n` line breaks and numeric HTML entities (`&sup2;`) are no longer damaged; `[cite: ...]` removal never swallows text up to a later `]`.
+- Vault result (182 notes that needed repair): empty callout gaps 1361 to 0, split or separator-less tables 8 to 0, `|` in table math 1 to 0, MathJax errors 7 to 5 (the rest are corrupted OCR formulas), no content lost.
+
 ## V39 (1.39.0), 2026-10-23
 - **Stray code fence fix:** a lone ``` (for example pasted right after the YAML) opened a code block that swallowed the note and flipped every later fence, so text showed as code and diagrams broke. It is detected (an untagged fence with Markdown inside, followed by a tagged fence) and removed. Found in `EE2034 Power Systems I/22 Paper`.
 - **Settings tab:** repair automatically after a large paste (on by default, 400 characters), paste size, notices on or off. One Ctrl+Z undoes an auto-repair; the cursor line is kept.

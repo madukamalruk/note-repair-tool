@@ -147,6 +147,11 @@ test('[cite] markers are removed', () => {
   has(t, 'text more x');
   hasNot(t, '[cite');
 });
+test('[cite: ...] removal never swallows text up to a later ]', () => {
+  const t = repair('# H\n\nvalue [cite: 12-14] and [cite: 3, 4]. Then <Q1 [cite:" keep this text] more\n');
+  has(t, 'value and.');
+  has(t, '[cite:" keep this text] more');
+});
 test('Source notes and chunk-boundary lines are kept', () => {
   const doc = '# H\n\nbody (Source 8)\n\n---\nSTATUS: Done [a] | Next [b]\nඊළඟ කොටසට යමුද?\n';
   const t = repair(doc);
@@ -160,6 +165,17 @@ test('{{date:YYYY-MM-DD}} is filled with today in the YAML only', () => {
   const t = repair('---\ntags: [a]\nDate: {{date:YYYY-MM-DD}}\n---\n# H\n\n{{date:YYYY-MM-DD}} in body\n');
   has(t, 'Date: ' + iso);
   has(t, '{{date:YYYY-MM-DD}} in body');
+});
+test('a horizontal rule near the top is NOT frontmatter: no text above it is lost', () => {
+  const doc = 'First paragraph of the note.\n\nSecond line.\n\n---\n\n### 1. A heading\n\nBody text\n\n---\n\nMore text\n';
+  const t = repair(doc);
+  has(t, 'First paragraph of the note.');
+  has(t, '### 1. A heading');
+  has(t, 'More text');
+});
+test('frontmatter is still cleaned (leading blank line, ## key:, bold)', () => {
+  const t = repair('\n---\n## tags: [a]\n\nSubject: X\n---\n# H\n');
+  eq(t.split('\n').slice(0, 4).join('\n'), '---\ntags: [a]\nSubject: X\n---');
 });
 test('YAML frontmatter loses blank lines and heading marks', () => {
   const t = repair('---\n\n## tags: [a]\n\nSubject: X\n---\n# H\n');
@@ -218,6 +234,57 @@ test('table rows split over several lines are merged', () => {
   const t = repair('# H\n\n| a | b |\n| --- | --- |\n| 1 |\n| 2 |\n');
   has(t, '| 1 | 2 |');
 });
+test('tables: cells of one row on separate lines are put back together (inside a callout)', () => {
+  const t = repair('# H\n\n> | Job | Plants | Reason |\n> | --- | --- | --- |\n> | **Base** |  |  |\n>\n>  | Coal, nuclear\n>\n>  | cheap fuel |\n> | **Peak** |  |  |\n>\n>  | Hydro |\n>\n>  | fast start |\n');
+  has(t, '> | **Base** | Coal, nuclear | cheap fuel |');
+  has(t, '> | **Peak** | Hydro | fast start |');
+  eq(repair(t), t, 'not idempotent');
+});
+test('tables: rows cut at the wrong pipe are re-chunked to the header width', () => {
+  const t = repair('# H\n\n| A | B | C | D |\n| --- | --- | --- | --- |\n| a1 | b1 | c1 |\n| d1 | a2 | b2 |\n| c2 | d2 | a3 | b3 |\n| c3 | d3 |\n');
+  has(t, '| a1 | b1 | c1 | d1 |');
+  has(t, '| a2 | b2 | c2 | d2 |');
+  has(t, '| a3 | b3 | c3 | d3 |');
+});
+test('tables: a ragged but intentional table is left alone', () => {
+  const doc = '# H\n\n| A | B | C |\n| --- | --- | --- |\n| a | b |\n| c | d |\n| e | f | g |\n';
+  has(repair(doc), '| a | b |\n| c | d |\n| e | f | g |');
+});
+test('tables: rows split by a blank line rejoin, a second table gets a blank line, callout prefix is restored', () => {
+  has(repair('# H\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n| 3 | 4 |\n'), '| 1 | 2 |\n| 3 | 4 |');
+  const two = repair('# H\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n| X | Y | Z |\n| --- | --- | --- |\n| p | q | r |\n');
+  has(two, '| 1 | 2 |\n\n| X | Y | Z |');
+  has(repair('# H\n\n> | A | B |\n| --- | --- |\n| 1 | 2 |\n'), '> | A | B |\n> | --- | --- |\n> | 1 | 2 |');
+});
+test('tables: a raw | inside real math is replaced, money with | is not', () => {
+  has(repair('# H\n\n| A | B |\n| --- | --- |\n| $|x|$ | $a_1$ |\n'), '$\\vert x\\vert$');
+  has(repair('# H\n\n| Item | Cost |\n| --- | --- |\n| Plant | $2000 per kW | $8000 per kW |\n'), '$2000 per kW | $8000 per kW');
+});
+test('MathJax: \\left{ , bare %, bare & and spaces inside $ are fixed', () => {
+  has(repair('# H\n\n$\\mathcal{L}\\left{f(t)\\right} = F$ and $\\pm 0.1%$ and $ \\frac{a}{b} $\n'), '$\\mathcal{L}\\left\\{f(t)\\right\\} = F$');
+  has(repair('# H\n\n$\\pm 0.1%$\n'), '$\\pm 0.1\\%$');
+  has(repair('# H\n\n$ \\frac{a}{b} $\n'), '$\\frac{a}{b}$');
+  has(repair('# H\n\n$$\na &= b \\\\\nc &= d\n$$\n'), '\\begin{aligned}');
+  const ok = '# H\n\n$$\n\\begin{aligned}\na &= b\\% \\\\\nc &= d\n\\end{aligned}\n$$\n';
+  eq(repair(ok), ok, 'valid math was changed');
+});
+test('MathJax: currency text and \\text{...} are not touched', () => {
+  const doc = '# H\n\nIt costs $5 and later $10 in total, 50% done.\n';
+  eq(repair(doc), doc);
+});
+test('plain-text LaTeX in prose is wrapped in $ (and prose stays prose)', () => {
+  const t = repair('# H\n\n- I_C = \\beta I_B (කලෙක්ටර් ධාරාව)\n\nFrom x \\cdot y + z = 0, we get file_name.\n');
+  has(t, '- $I_C = \\beta I_B$ (කලෙක්ටර් ධාරාව)');
+  has(t, '$x \\cdot y + z = 0$');
+  has(t, 'file_name');
+  hasNot(t, '$file_name$');
+  eq(repair(t), t, 'not idempotent');
+});
+test('repairText reaches a fixed point on a note that needs several passes', () => {
+  const doc = '```\n\n## Inventory\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n```tikz\n\\begin{document}\n\\begin{circuitikz}\n\\draw (0,0) to[R] (2,0);\n\\end{circuitikz}\n\\end{document}\n```\n\n> [!note] N\n> text\n>\n';
+  const r = plugin.repairText(doc);
+  eq(plugin.repairText(r.text).changed, false, 'second call changed the text');
+});
 test('embedded callouts keep their fold marker and new types', () => {
   has(repair('# H\n\n[!example]+ Title here\nbody\n'), '> [!example]+ Title here');
   has(repair('# H\n\n> [!abstract] Definition 2.1\n> text\n'), '> [!abstract] Definition 2.1\n> text');
@@ -228,6 +295,12 @@ test('Mermaid labels become plain text', () => {
   const t = repair('# H\n\n```mermaid\nflowchart TD\n    A["$$a_0, a_n$$ Formulas"] --> B["Even & Odd \\pi"]\n```\n');
   hasNot(t, '$');
   has(t, 'Even and Odd \u03c0');
+});
+test('Mermaid keeps the \\n line break and numeric HTML entities in labels', () => {
+  const t = repair('# H\n\n```mermaid\nflowchart TD\n    A["State one\\nCalculate $x$"] --> B["z&sup2; and &alpha;&sup1;"]\n```\n');
+  has(t, 'State one\\nCalculate x');
+  has(t, '&sup2;');
+  has(t, '&sup1;');
 });
 test('an untagged fence after a "Code snippet" label becomes mermaid', () => {
   has(repair('# H\n\nCode snippet\n\n```\nflowchart LR\n    A["x"] --> B["y"]\n```\n'), '```mermaid');

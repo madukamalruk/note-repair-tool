@@ -112,7 +112,7 @@ class ConfirmModal extends Modal {
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
-    console.log('Loading Note Repair Tool Plugin V39...');
+    console.log('Loading Note Repair Tool Plugin V40...');
     await this.loadSettings();
     this.addSettingTab(new NoteRepairSettingTab(this.app, this));
 
@@ -289,7 +289,24 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     }
   }
 
+  // V40: run the pipeline until the text stops changing (fixers feed each other: removing a stray fence
+  // exposes a table, splitting a callout leaves an empty '>', ...). This makes repairText idempotent by
+  // construction: repairText(repairText(x).text).changed is always false.
   repairText(rawText) {
+    let text = rawText;
+    let summary = '';
+    let extra = 0;
+    for (let pass = 0; pass < 6; pass++) {
+      const r = this.repairPass(text);
+      if (!r.changed) break;
+      if (pass === 0) summary = r.summary; else extra++;
+      text = r.text;
+    }
+    if (extra > 0) summary += ' (+' + extra + ' follow-up pass' + (extra > 1 ? 'es' : '') + ')';
+    return { text, changed: text !== rawText, summary: summary || 'No fixes needed' };
+  }
+
+  repairPass(rawText) {
     let text = rawText;
     let changes = [];
 
@@ -326,6 +343,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const hrRes = this.fixHorizontalRules(text);
     if (hrRes.fixed) { text = hrRes.text; changes.push('Spaced horizontal rules'); }
 
+    // 2.9 V40: rows split across lines, blank-line splits, lost callout prefixes, | inside math
+    const tableStructRes = this.fixTableStructure(text);
+    if (tableStructRes.fixedCount > 0) { text = tableStructRes.text; changes.push(`Rebuilt ${tableStructRes.fixedCount} broken tables`); }
+
     // 3. Tables (ONE pass only — bug fix: was running twice)
     const tableRes = this.fixTables(text);
     if (tableRes.mergedRows > 0) { text = tableRes.text; changes.push(`Merged ${tableRes.mergedRows} split table rows`); }
@@ -345,6 +366,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     // 6b. V37: re-prefix math lines inside callouts that lost their '> '
     const calloutMathRes = this.fixCalloutMath(text);
     if (calloutMathRes.fixedCount > 0) { text = calloutMathRes.text; changes.push(`Re-quoted ${calloutMathRes.fixedCount} math lines inside callouts`); }
+
+    // 6c. V40: math that makes MathJax show its error box (\left{, bare %, bare &, spaces inside $)
+    const mjRes = this.fixMathJaxErrors(text);
+    if (mjRes.fixedCount > 0) { text = mjRes.text; changes.push(`Fixed ${mjRes.fixedCount} MathJax error patterns`); }
 
     // 7. LaTeX array environments
     const latexRes = this.fixLatex(text);
@@ -389,6 +414,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     // 14. Fix functionplot/chart blocks broken by previous hr fix
     const functionplotRes = this.fixFunctionPlotBlocks(text);
     if (functionplotRes.fixed) { text = functionplotRes.text; changes.push('Fixed graph code blocks'); }
+
+    // 16. V40: LaTeX written as plain text
+    const nakedRes = this.fixNakedLatex(text);
+    if (nakedRes.fixedCount > 0) { text = nakedRes.text; changes.push(`Wrapped plain-text math in ${nakedRes.fixedCount} lines`); }
 
     // 17. V37: tight lists (no blank line between consecutive items)
     const looseRes = this.fixLooseLists(text);
@@ -692,40 +721,41 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     return { text: out.join('\n'), fixedCount };
   }
 
+  // V40: only a REAL frontmatter block is touched. The old version took any "---" within the first 10 lines
+  // (for example a horizontal rule) as the opening, threw away everything above it and stripped the "#" of
+  // headings below it, which deleted the first paragraphs of notes without frontmatter.
   fixYaml(text) {
-    let lines = text.split('\n');
-    let openIdx = -1;
-
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      if (lines[i].trim() === '---') { openIdx = i; break; }
-    }
-
-    if (openIdx === -1) return { text, fixed: false };
+    const lines = text.split('\n');
+    let openIdx = 0;
+    while (openIdx < lines.length && lines[openIdx].trim() === '') openIdx++;
+    if (openIdx >= lines.length || lines[openIdx].trim() !== '---') return { text, fixed: false };
 
     let closeIdx = -1;
-    for (let i = openIdx + 1; i < Math.min(lines.length, 25); i++) {
+    for (let i = openIdx + 1; i < Math.min(lines.length, openIdx + 31); i++) {
       if (lines[i].trim() === '---') { closeIdx = i; break; }
     }
-
     if (closeIdx === -1) return { text, fixed: false };
 
-    let yamlBody = lines.slice(openIdx + 1, closeIdx);
-    let changed = false;
-    let cleanBody = [];
+    const yamlBody = lines.slice(openIdx + 1, closeIdx);
+    const keyRe = /^\s*(?:#+\s*)?(?:\*\*)?[A-Za-z_][\w\- ]*(?:\*\*)?\s*:/;
+    const itemRe = /^\s*-\s+\S/;
+    const contRe = /^\s+\S/;
+    for (const l of yamlBody) {
+      if (l.trim() === '') continue;
+      if (!(keyRe.test(l) || itemRe.test(l) || contRe.test(l))) return { text, fixed: false };
+    }
 
-    for (let l of yamlBody) {
-      let t = l.trim();
-      if (t === '') { changed = true; continue; }
-      let stripped = l.replace(/^#+\s*/, '');
+    let changed = openIdx > 0;
+    const cleanBody = [];
+    for (const l of yamlBody) {
+      if (l.trim() === '') { changed = true; continue; }
+      const stripped = l.replace(/^(\s*)#+\s*/, '$1');
       if (stripped !== l) changed = true;
       cleanBody.push(stripped);
     }
-
-    if (openIdx > 0) changed = true;
     if (!changed) return { text, fixed: false };
 
-    let result = ['---', ...cleanBody, '---', ...lines.slice(closeIdx + 1)].join('\n');
-    return { text: result, fixed: true };
+    return { text: ['---', ...cleanBody, '---', ...lines.slice(closeIdx + 1)].join('\n'), fixed: true };
   }
 
   extractPrefix(line) {
@@ -837,6 +867,8 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
             while (cells.length > numCols && cells[cells.length - 1] === '') cells.pop();
 
             let rowBuffer = p3 + '| ' + cells.join(' | ') + ' |';
+            // V40: a row that already ends with a closing pipe is complete (ragged rows are legal); do not glue the next row to it
+            const rowTerminated = t.endsWith('|') && !t.endsWith('\\|');
             let j = i + 1;
 
             while (this.countPipes(rowBuffer) < targetPipeCount && j < lines.length) {
@@ -853,7 +885,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
                 }
                 
                 if (nextTClean.startsWith('|')) {
-                  if (this.countPipes(nextTClean) >= targetPipeCount) break;
+                  if (rowTerminated || this.countPipes(nextTClean) >= targetPipeCount) break;
                   cells.push(...this.splitCells(nextTClean));
                 } else {
                   let newParts = this.splitCells(nextTClean);
@@ -1193,8 +1225,8 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
           const symbols = { pi: '\u03c0', theta: '\u03b8', omega: '\u03c9', alpha: '\u03b1', beta: '\u03b2', gamma: '\u03b3', delta: '\u03b4', sigma: '\u03c3', mu: '\u03bc', lambda: '\u03bb', phi: '\u03c6', infty: '\u221e', sum: '\u03a3', int: '\u222b', sqrt: '\u221a', leq: '\u2264', le: '\u2264', geq: '\u2265', ge: '\u2265', neq: '\u2260', to: '\u2192', rightarrow: '\u2192', Rightarrow: '\u21d2', pm: '\u00b1', approx: '\u2248', in: '\u2208' };
           const plain = (str) => str
             .replace(/\\(?:text|mathrm|mathbf|mathbb)\{([^}]*)\}/g, '$1')
-            .replace(/\\([a-zA-Z]+)/g, (m, n) => (n in symbols ? symbols[n] : (n.length > 1 ? n : m)))
-            .replace(/&(?!(?:[a-zA-Z]+|#\d+);)/g, 'and');
+            .replace(/\\([a-zA-Z]+)/g, (m, n) => (n in symbols ? symbols[n] : m))
+            .replace(/&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#\d+|#x[0-9a-fA-F]+);)/g, 'and');
           let cleaned = l.replace(/\$+/g, '');
           if (isMindmap) cleaned = plain(cleaned);
           else cleaned = cleaned.replace(/"([^"\n]*)"/g, (q, inner) => '"' + plain(inner) + '"');
@@ -1517,6 +1549,298 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     ).open();
   }
 
+  // ─── V40 ─────────────────────────────────────────────────────────────
+
+  // Splits a table row on unescaped pipes (escaped \| stays inside the cell).
+  splitRow(content) {
+    const t = content.trim();
+    const cells = [];
+    let cur = '';
+    for (let i = 0; i < t.length; i++) {
+      const ch = t[i];
+      if (ch === '\\' && t[i + 1] === '|') { cur += '\\|'; i++; continue; }
+      if (ch === '|') { cells.push(cur); cur = ''; continue; }
+      cur += ch;
+    }
+    cells.push(cur);
+    if (cells.length && cells[0].trim() === '') cells.shift();
+    if (cells.length && cells[cells.length - 1].trim() === '') cells.pop();
+    return cells.map(c => c.trim());
+  }
+
+  // A raw | inside $...$ splits the table cell. \vert renders the same bar.
+  fixMathPipesInRow(content) {
+    return content.replace(/\$([^$\n]*)\$/g, (m, inner) => ((/[\\^_{}]/.test(inner) || (/^\S+$/.test(inner) && inner.includes('|'))) ? '$' + inner.replace(/(?<!\\)\|/g, '\\vert ') + '$' : m));
+  }
+
+  // V40: repairs tables whose rows were broken by earlier tools or by the AI:
+  //  - rows split over several lines (cells of one row on separate lines, or rows cut at the wrong pipe)
+  //  - rows separated by blank lines (the table "splits")
+  //  - rows inside a callout that lost the "> " prefix
+  //  - trailing all-empty rows, raw | inside math
+  // Well-formed tables are never touched, so the fixer is idempotent.
+  fixTableStructure(text) {
+    const lines = text.split('\n');
+    const out = [];
+    let fixedCount = 0;
+    let inCode = false;
+    const depth = (p) => (p.match(/>/g) || []).length;
+    const isSepAt = (k) => k < lines.length && this.isSeparatorRow(this.extractPrefix(lines[k]).content.trim());
+
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const ext = this.extractPrefix(line);
+      const c0 = ext.content.trim();
+      if (c0.startsWith('```')) inCode = !inCode;
+      if (inCode || !c0.startsWith('|') || !isSepAt(i + 1)) { out.push(line); i++; continue; }
+
+      const prefix = ext.prefix;
+      const N = this.splitRow(ext.content).length;
+      let gluedToPrevious = false;
+      if (out.length > 0) {
+        const prev = this.extractPrefix(out[out.length - 1]).content.trim();
+        if (prev.startsWith('|')) gluedToPrevious = true;
+      }
+      const sepExt = this.extractPrefix(lines[i + 1]);
+      const sepPrefixOk = depth(sepExt.prefix) === depth(prefix);
+      let j = i + 2;
+      let gapAbsorbed = false;
+      const rows = [];
+      while (j < lines.length) {
+        const e = this.extractPrefix(lines[j]);
+        const c = e.content.trim();
+        if (c === '') {
+          let k = j;
+          while (k < lines.length && this.extractPrefix(lines[k]).content.trim() === '') k++;
+          if (k < lines.length) {
+            const e2 = this.extractPrefix(lines[k]);
+            const c2 = e2.content.trim();
+            if (c2.startsWith('|') && !isSepAt(k + 1) && (depth(e2.prefix) === depth(prefix) || depth(e2.prefix) === 0)) { j = k; gapAbsorbed = true; continue; }
+          }
+          break;
+        }
+        if (!c.startsWith('|') || isSepAt(j + 1)) break;
+        if (depth(e.prefix) !== depth(prefix) && depth(e.prefix) !== 0) break;
+        rows.push({ content: e.content, prefix: e.prefix });
+        j++;
+      }
+
+      let changed = gapAbsorbed;
+      let body = rows.map(r => {
+        const fixedContent = this.fixMathPipesInRow(r.content);
+        if (fixedContent !== r.content) changed = true;
+        if (r.prefix.replace(/\s+$/, '') !== prefix.replace(/\s+$/, '')) changed = true;
+        return this.splitRow(fixedContent);
+      });
+      const originalCount = body.length;
+
+      // trailing all-empty rows
+      while (body.length && body[body.length - 1].every(c => c === '')) { body.pop(); changed = true; }
+
+      // a row padded with empty cells, followed by one-cell rows: the cells of one row were put on separate lines
+      if (N >= 2) {
+        for (let r = 0; r < body.length; r++) {
+          const padded = body[r].slice();
+          while (padded.length < N) padded.push('');
+          let need = 0;
+          for (let c = padded.length - 1; c >= 0 && padded[c] === ''; c--) need++;
+          if (need === 0 || need === padded.length) continue;
+          let take = 0;
+          while (take < need && r + 1 + take < body.length && body[r + 1 + take].length === 1 && body[r + 1 + take][0] !== '') take++;
+          if (take === 0) continue;
+          for (let t = 0; t < take; t++) padded[N - need + t] = body[r + 1 + t][0];
+          body.splice(r + 1, take);
+          body[r] = padded;
+          changed = true;
+        }
+      }
+
+      // rows cut at the wrong pipe: when many rows have the wrong width but all cells together fit the grid, re-chunk
+      if (N >= 2 && body.length >= 3) {
+        const wrong = body.filter(c => c.length !== N).length;
+        const total = body.reduce((s, c) => s + c.length, 0);
+        if (wrong >= 3 && wrong * 2 >= body.length && total % N === 0) {
+          const stream = [].concat(...body);
+          body = [];
+          for (let k = 0; k < stream.length; k += N) body.push(stream.slice(k, k + N));
+          changed = true;
+        }
+      }
+
+      if (!changed && body.length === originalCount && !gluedToPrevious && sepPrefixOk) {
+        for (let k = i; k < j; k++) out.push(lines[k]);
+      } else {
+        if (gluedToPrevious) out.push(prefix.replace(/\s+$/, ''));
+        out.push(lines[i], sepPrefixOk ? lines[i + 1] : prefix + sepExt.content.trim());
+        for (const cells of body) out.push(prefix + '| ' + cells.join(' | ') + ' |');
+        fixedCount++;
+      }
+      i = j;
+    }
+    return { text: out.join('\n'), fixedCount };
+  }
+
+  // ─── V40: MathJax error prevention ───────────────────────────────────
+
+  // Math that makes Obsidian's MathJax show the yellow error box, or silently cuts the formula:
+  //   \left{ ... \right}  (needs \left\{ ... \right\}), an unescaped % (a TeX comment: the rest of the line is lost),
+  //   a bare & outside any alignment environment ("Misplaced &"), spaces just inside the $ delimiters.
+  fixMathJaxErrors(text) {
+    let fixedCount = 0;
+    const lines = text.split('\n');
+    const envRe = /\\begin\{(?:aligned|align\*?|alignedat|array|matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|smallmatrix|cases|split|gather\*?|gathered|eqnarray\*?|subarray|CD)\}/;
+    const mathy = /[\\^_{}=]/;
+
+    const sanitize = (m, hasEnv) => {
+      let s = m;
+      s = s.replace(/\\left\s*\{/g, '\\left\\{').replace(/\\right\s*\}/g, '\\right\\}');
+      s = s.replace(/(?<!\\)%/g, '\\%');
+      if (!hasEnv) s = s.replace(/(?<!\\)&/g, '\\&');
+      return s;
+    };
+
+    let inCode = false;
+    let yaml = lines[0] && lines[0].trim() === '---';
+    let blockStart = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      const bare = l.replace(/^[ \t>]*/, '');
+      if (yaml) { if (i > 0 && l.trim() === '---') yaml = false; continue; }
+      if (bare.startsWith('```')) { inCode = !inCode; continue; }
+      if (inCode) continue;
+      const noCode = bare.replace(/`[^`]*`/g, m => ' '.repeat(m.length));
+      const dd = (noCode.match(/\$\$/g) || []).length;
+
+      if (blockStart >= 0) {
+        if (dd % 2 === 1) {
+          // block lines blockStart..i: the math is everything between the two $$ fences
+          const hasEnv = envRe.test(lines.slice(blockStart, i + 1).join('\n'));
+          const needsAligned = !hasEnv && lines.slice(blockStart, i + 1).some(x => /(?<!\\)&/.test(x.replace(/^[ \t>]*/, '').replace(/\$\$/g, '')));
+          for (let k = blockStart; k <= i; k++) {
+            const pre = lines[k].match(/^[ \t>]*/)[0];
+            let body = lines[k].slice(pre.length);
+            let mathPart = body;
+            let head = '', tail = '';
+            if (k === blockStart) { const p = body.indexOf('$$'); head = body.slice(0, p + 2); mathPart = body.slice(p + 2); }
+            if (k === i) { const p = mathPart.lastIndexOf('$$'); tail = mathPart.slice(p); mathPart = mathPart.slice(0, p); }
+            let fixed = sanitize(mathPart, true);
+            if (needsAligned && k === blockStart) fixed = '\\begin{aligned}' + (fixed.trim() === '' ? '' : ' ') + fixed;
+            if (needsAligned && k === i) fixed = fixed + (fixed.trim() === '' ? '' : ' ') + '\\end{aligned}';
+            if (fixed !== mathPart) { lines[k] = pre + head + fixed + tail; fixedCount++; }
+          }
+          blockStart = -1;
+        }
+        continue;
+      }
+      if (dd % 2 === 1) { blockStart = i; if (dd > 1) { /* $$a$$ then an opening $$ on the same line: leave it */ } continue; }
+
+      // single-line $$...$$ and inline $...$
+      let line = l;
+      let changed = false;
+      line = line.replace(/\$\$([^$]+)\$\$/g, (m, inner) => {
+        const hasEnv = envRe.test(inner);
+        let f = sanitize(inner, true);
+        if (!hasEnv && /(?<!\\)&/.test(f)) f = '\\begin{aligned} ' + f.trim() + ' \\end{aligned}';
+        if (f !== inner) changed = true;
+        return '$$' + f + '$$';
+      });
+      line = line.replace(/(?<![\\$])\$(?!\$)([^$\n]+?)\$(?!\$)/g, (m, inner) => {
+        let f = inner;
+        const looksMath = mathy.test(inner) && !/[A-Za-z]{3,}\s+[A-Za-z]{3,}/.test(inner.replace(/\\text\{[^}]*\}/g, ''));
+        if (!looksMath) return m;
+        if (/^\s|\s$/.test(f)) f = f.trim();
+        f = sanitize(f, envRe.test(f));
+        if (f !== inner) changed = true;
+        return '$' + f + '$';
+      });
+      if (changed && line !== l) { lines[i] = line; fixedCount++; }
+    }
+    return { text: lines.join('\n'), fixedCount };
+  }
+
+  // ─── V40: LaTeX written as plain text ────────────────────────────────
+
+  // "I_C = \beta I_B" in prose renders as raw text. Wrap each maximal math run in $...$.
+  // Conservative: only lines without any $, outside code/math/YAML, and only runs that contain a known command or a short subscript/superscript.
+  fixNakedLatex(text) {
+    const cmds = 'alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|lambda|mu|nu|xi|pi|rho|sigma|tau|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|frac|sqrt|sum|prod|int|infty|cdot|times|pm|mp|leq|geq|neq|approx|equiv|rightarrow|leftarrow|Rightarrow|Leftarrow|overline|bar|hat|vec|ldots|cdots|partial|nabla|mathrm|circ';
+    const cmdRe = new RegExp('\\\\(?:' + cmds + ')(?![A-Za-z])');
+    const scriptRe = /^(?:[A-Za-z]{1,2}\d*(?:_\{[^}]+\}|_[A-Za-z0-9]{1,3}|\^\{[^}]+\}|\^[A-Za-z0-9]{1,2})+)+[.,;:)]*$/;
+    const opRe = /^[=+\-*/<>]+$/;
+    const weakRe = /^(?:[A-Za-z]|\d+(?:\.\d+)?[A-Za-z]{0,2}|\([A-Za-z0-9+\-*/=^_ ]{1,12}\))$/;
+
+    let fixedCount = 0;
+    const lines = text.split('\n');
+    let inCode = false, inMath = false;
+    let yaml = lines[0] && lines[0].trim() === '---';
+    const out = lines.map((l, idx) => {
+      const pre = l.match(/^[ \t>]*/)[0];
+      const bare = l.slice(pre.length);
+      if (yaml) { if (idx > 0 && l.trim() === '---') yaml = false; return l; }
+      if (bare.startsWith('```')) { inCode = !inCode; return l; }
+      if (inCode) return l;
+      const dd = (bare.replace(/`[^`]*`/g, '').match(/\$\$/g) || []).length;
+      if (dd % 2 === 1) { inMath = !inMath; return l; }
+      if (inMath || dd > 0) return l;
+      if (!/\\/.test(bare) && !/_|\^/.test(bare)) return l;
+      if (/\$|\\\(|\\\[|\[\[|https?:\/\/|^\s{4,}|`/.test(bare) || /^\|?[\s:|-]+\|?$/.test(bare)) return l;
+      if (!cmdRe.test(bare) && !/(^|\s)[A-Za-z]{1,2}\d*(?:_|\^)/.test(bare)) return l;
+
+      // keep a list marker or heading marker outside the math
+      const marker = (bare.match(/^(?:[-*+]|\d+[.)]|#{1,6})\s+/) || [''])[0];
+      const body = bare.slice(marker.length);
+
+      // tokens: split on whitespace at brace depth 0
+      const tokens = [];
+      let depth = 0, start = -1;
+      for (let p = 0; p <= body.length; p++) {
+        const ch = body[p];
+        const ws = p === body.length || (depth === 0 && /\s/.test(ch));
+        if (!ws) { if (start < 0) start = p; if (ch === '{') depth++; else if (ch === '}') depth = Math.max(0, depth - 1); }
+        else if (start >= 0) { tokens.push({ s: start, e: p, t: body.slice(start, p) }); start = -1; }
+      }
+      const kind = (t) => {
+        const core = t.replace(/[.,;:!?]+$/, '');
+        if (cmdRe.test(core) && !/[඀-෿]/.test(core)) return 'strong';
+        if (scriptRe.test(t)) return 'strong';
+        if (opRe.test(core)) return 'op';
+        if (weakRe.test(core)) return 'weak';
+        return 'word';
+      };
+      const kinds = tokens.map(t => kind(t.t));
+      let result = '';
+      let last = 0;
+      let k = 0;
+      let did = false;
+      while (k < tokens.length) {
+        if (kinds[k] === 'word') { k++; continue; }
+        let m = k;
+        while (m < tokens.length && kinds[m] !== 'word') m++;
+        // run is tokens k..m-1; trim leading/trailing operators
+        let a = k, z = m - 1;
+        while (a <= z && kinds[a] === 'op') a++;
+        while (z >= a && kinds[z] === 'op') z--;
+        const hasStrong = (() => { for (let q = a; q <= z; q++) if (kinds[q] === 'strong') return true; return false; })();
+        if (a <= z && hasStrong) {
+          // trailing punctuation stays outside the math
+          let endPos = tokens[z].e;
+          const trail = tokens[z].t.match(/[.,;:!?]+$/);
+          if (trail && !/[{}]$/.test(tokens[z].t.slice(0, -trail[0].length))) endPos -= trail[0].length;
+          result += body.slice(last, tokens[a].s) + '$' + body.slice(tokens[a].s, endPos) + '$';
+          last = endPos;
+          did = true;
+        }
+        k = m;
+      }
+      if (!did) return l;
+      result += body.slice(last);
+      fixedCount++;
+      return pre + marker + result;
+    });
+    return { text: out.join('\n'), fixedCount };
+  }
+
   // V38: build the TikZJax preamble from what the diagram really needs instead of a fixed one.
   // A pgfplots graph (\begin{axis}) used to be rebuilt WITHOUT pgfplots and failed with
   // "Environment axis undefined" (broken image icon). Libraries declared by the AI (calc, arrows.meta,
@@ -1655,7 +1979,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     let fixedCount = 0;
     const lines = text.split('\n');
     let inCode = false;
-    const citeRe = /[ \t]*\[cite(?::[^\]\n]*)?\]|\[cite_(?:start|end)\]/g;
+    const citeRe = /[ \t]*\[cite(?::\s*[\d\s,\u2013-]*)?\]|\[cite_(?:start|end)\]/g;
     const out = lines.map(line => {
       if (line.replace(/^[>\s]*/, '').startsWith('```')) { inCode = !inCode; return line; }
       if (inCode) return line;

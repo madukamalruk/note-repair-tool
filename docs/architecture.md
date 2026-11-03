@@ -35,11 +35,13 @@ flowchart LR
 | 1b | `fixLeaks` | Remove `[cite: ...]` markers |
 | 1c | `fixMathDelimiters` | `\( \)` and `\[ \]` to `$` and `$$` |
 | 2, 2b | `fixYaml`, `fixDatePlaceholder` | Clean frontmatter; fill `{{date:YYYY-MM-DD}}` |
+| 2.9 | `fixTableStructure` | Rebuild broken tables before the older stitching pass |
 | 2.5 | `fixHorizontalRules` | Blank lines around `---` so it never becomes a setext heading |
 | 3 | `fixTables` | Merge split rows, inject missing separators |
 | 4 | `fixEmbeddedCallouts` | Pull callouts out of table rows and paragraphs |
 | 5 | `fixDataviewConflicts` | Protect inline Dataview fields |
 | 6, 6b | `fixCallouts`, `fixCalloutMath` | Callout math boundaries, trailing empty `>`, re-quote math lines that lost the prefix |
+| 6c | `fixMathJaxErrors` | `\left{`, bare `%` and `&`, spaces inside `$` |
 | 7 | `fixLatex` | `\begin{array}` column specs |
 | 8 | `fixMermaid` | Quote labels, plain-text labels, arrows, prefix on closing fences |
 | 9 | `fixBrokenHighlights` | Unclosed `==` outside code and math |
@@ -49,12 +51,14 @@ flowchart LR
 | 12 | `fixCodeBlockLanguages` | Tag untagged fences after a "Code snippet", "Matlab" or "Python" label |
 | 13 | `fixYoutubeLinks` | Links to iframes |
 | 14 | `fixFunctionPlotBlocks` | Heal Functionplot YAML and hallucinated lines |
+| 16 | `fixNakedLatex` | Wrap LaTeX written as plain text in `$` |
 | 17 | `fixLooseLists` | Remove blank lines between list items |
 | 18 | `fixSpacing` | At most one blank line outside code |
 
 ## Design rules
 
-- **Idempotent:** a second run on repaired text must change nothing. The test suite checks this on a composite document.
+- **Idempotent:** `repairText` repeats the pass (`repairPass`) until the text is stable, so repairing a repaired note never changes it. The test suite checks this, and a whole-vault dry run was used to verify it (0 notes changed by a second pass).
+- **Never lose content:** a fixer that removes text must be explicit about the pattern. The old YAML fixer deleted the first paragraphs of notes; the vault validation compares the words of every note before and after repair.
 - **Protect code:** fixers track code fences (and `$$` blocks where relevant) and do not rewrite their contents unless they are about that block.
 - **Prefix aware:** inside callouts every line starts with `> `. Fixers read the prefix with `extractPrefix` or `/^[>\s]*/` and re-apply it.
 - **No data loss:** fixers rewrite syntax, not content. Removing content (for example `[cite]` markers) is limited to explicit, documented patterns.
