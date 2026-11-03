@@ -112,7 +112,7 @@ class ConfirmModal extends Modal {
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
-    console.log('Loading Note Repair Tool Plugin V40...');
+    console.log('Loading Note Repair Tool Plugin V41...');
     await this.loadSettings();
     this.addSettingTab(new NoteRepairSettingTab(this.app, this));
 
@@ -1013,6 +1013,12 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
       if (line.replace(/^[>\s]*/, '').startsWith('```')) inCode = !inCode;
 
+      // V41: callouts are never collapsible: [!type]- and [!type]+ become [!type]
+      if (!inCode) {
+        const unfolded = line.replace(/^([ \t]*(?:>[ \t]*)+)\[!([a-zA-Z0-9_-]+)\][-+](?=\s|$)/, '$1[!$2]');
+        if (unfolded !== line) { line = unfolded; fixedCount++; }
+      }
+
       if (line.includes('$$>') || line.includes(' >$$')) {
         line = line.replace(/\$\$>\s*/g, '$$\n> ');
         line = line.replace(/\s*>\$\$/g, '\n> $$');
@@ -1061,7 +1067,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
         if (match) {
           let prefix = match[1];
           let type = match[2];
-          let fold = match[3];
+          let fold = ''; // V41: never foldable
           let suffix = match[4];
 
           if (prefix.trim() === '>' || prefix.trim() === '') {

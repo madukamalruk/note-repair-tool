@@ -285,8 +285,18 @@ test('repairText reaches a fixed point on a note that needs several passes', () 
   const r = plugin.repairText(doc);
   eq(plugin.repairText(r.text).changed, false, 'second call changed the text');
 });
-test('embedded callouts keep their fold marker and new types', () => {
-  has(repair('# H\n\n[!example]+ Title here\nbody\n'), '> [!example]+ Title here');
+test('callout fold markers are removed so every callout stays open', () => {
+  const t = repair('# H\n\n> [!example]- Title\n> body\n\n> [!question]+ Title\n> body\n\n> > [!note]- Nested\n> > text\n');
+  has(t, '> [!example] Title');
+  has(t, '> [!question] Title');
+  has(t, '[!note] Nested');
+  hasNot(t, ']-');
+  hasNot(t, ']+');
+  eq(repair(t), t, 'not idempotent');
+  has(repair('# H\n\n```text\n> [!note]- kept inside code\n```\n'), '> [!note]- kept inside code');
+});
+test('embedded callouts lose their fold marker and keep new types', () => {
+  has(repair('# H\n\n[!example]+ Title here\nbody\n'), '> [!example] Title here');
   has(repair('# H\n\n> [!abstract] Definition 2.1\n> text\n'), '> [!abstract] Definition 2.1\n> text');
 });
 

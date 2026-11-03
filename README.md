@@ -9,7 +9,7 @@ It was built for a Sinhala and English engineering study workflow (see [Semester
 | Area | What it repairs |
 | --- | --- |
 | **Tables** | Rows split over several lines or at the wrong pipe, blank-line splits, missing separator rows, tables glued together, lost `> ` prefixes inside callouts, `\|` in math cells, trailing empty rows |
-| **Callouts** | Callouts glued to table rows or paragraphs, math lines that lost their `> ` prefix, trailing empty `>` lines, fold markers (`[!example]+`) and the `abstract`, `important`, `summary`, `tldr`, `attention` types |
+| **Callouts** | Callouts glued to table rows or paragraphs, math lines that lost their `> ` prefix, trailing empty `>` lines, fold markers (`[!example]-`, `[!example]+`) removed so every callout stays open, and the `abstract`, `important`, `summary`, `tldr`, `attention` types |
 | **Math** | `\( \)` and `\[ \]` (not rendered by Obsidian) converted to `$` and `$$`, single `$` multi-line blocks, `\cline` stripped by Obsidian, collapsed arrays; MathJax error patterns (`\left{`, bare `%`, bare `&`, spaces inside `$`); LaTeX written as plain text is wrapped in `$` |
 | **Mermaid** | Unquoted labels, `&`, `$` and LaTeX in labels, bare `+` and `-` nodes, reversed arrows, mindmap quotes, no blank-line growth on repeated runs |
 | **TikZ / Circuitikz** | Rebuilds the block for [TikZJax](https://github.com/artisticat1/obsidian-tikzjax) with a preamble derived from the diagram: `pgfplots` for `axis` graphs, automatic libraries (`calc`, `arrows.meta`, `positioning`, `decorations.pathreplacing`, ...), braces around attribute values containing `=` or `,`, `top`/`bottom` to `above`/`below`, math in node text, escaped `%` and `&`, `l=R_1` labels |

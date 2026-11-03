@@ -2,6 +2,9 @@
 
 Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
 
+## V41 (1.41.0), 2026-11-03
+- V41: Auto-unfold collapsible callouts (strip - and + fold markers so all boxes stay permanently expanded). `> [!example]- Title` and `> [!question]+ Title` become `> [!example] Title` and `> [!question] Title`, also when nested; fenced code is untouched. 311 fold markers were removed from 20 notes of the vault (originals saved first).
+
 ## V40 (1.40.0), 2026-11-03
 Found by auditing a whole real vault (182 notes) and validating every formula with the real MathJax 3.2.2 (the engine family Obsidian bundles).
 - **Idempotent by construction:** `repairText` now runs the pipeline until the text stops changing (at most 6 passes). Before, 18 notes needed a second or third Repair (a removed stray fence exposed an empty `>`, a fixed table exposed a callout, ...). Over the whole vault a second pass now changes nothing.
