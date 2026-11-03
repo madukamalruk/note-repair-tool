@@ -2,6 +2,11 @@
 
 Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
 
+## V42 (1.42.0), 2026-11-04
+- **NotebookLM math:** formulas exported with a doubled backslash (`\\( ... \\)` and `\\[ ... \\]`) are converted to `$ ... $` and `$$ ... $$` (inside table rows display math becomes inline). A LaTeX line break before a parenthesis inside real math (`\\` + `(c)`) is not touched.
+- **NotebookLM bold:** `**A (**B**) C` (an outer bold left open by a nested pair in parentheses) is closed right after the parenthesis, so the bold no longer runs wild.
+- Verified on a 4,852-line NotebookLM note: 0 formulas rendered before, 859 after (real MathJax via markdown-it), 0 MathJax errors, no raw LaTeX left in the visible text; a second repair changes nothing.
+
 ## V41 (1.41.0), 2026-11-03
 - V41: Auto-unfold collapsible callouts (strip - and + fold markers so all boxes stay permanently expanded). `> [!example]- Title` and `> [!question]+ Title` become `> [!example] Title` and `> [!question] Title`, also when nested; fenced code is untouched. 311 fold markers were removed from 20 notes of the vault (originals saved first).
 

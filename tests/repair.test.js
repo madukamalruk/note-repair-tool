@@ -190,6 +190,21 @@ test('\\( \\) and \\[ \\] become $ and $$', () => {
   has(t, '\\\\[2pt]');
   has(t, '\n$$\nE = mc^2\n$$\n');
 });
+test('NotebookLM-style doubled-backslash delimiters \\\\( \\\\) and \\\\[ \\\\] become $ and $$', () => {
+  const t = repair('# H\n\n* **MPV:** mean (\\\\(l_m = \\frac{\\sum l_i}{n}\\\\)) of data\n\n   \\\\[\\text{Ground Limit} = 0.00025 \\times 1000\\\\]\n\n| Area | Small (\\\\(< 250\\text{ km}^2\\\\)) | Large \\\\[x^2\\\\] |\n| --- | --- | --- |\n| a | b | c |\n\n\\\\[\nE = mc^2\n\\\\]\n');
+  has(t, '(**MPV:** mean ($l_m = \\frac{\\sum l_i}{n}$) of data'.replace('(**MPV:**', '**MPV:**'));
+  has(t, '   $$\\text{Ground Limit} = 0.00025 \\times 1000$$');
+  has(t, '| Area | Small ($< 250\\text{ km}^2$) | Large $x^2$ |');
+  has(t, '\n$$\nE = mc^2\n$$\n');
+  hasNot(t, '\\\\(');
+  hasNot(t, '\\\\[');
+  eq(repair(t), t, 'not idempotent');
+});
+test('a real LaTeX line break before a parenthesis inside math is not a delimiter', () => {
+  const doc = '# H\n\n$$\n\\begin{aligned} a &= b \\\\\n(c) &= d \\end{aligned}\n$$\n';
+  has(repair(doc), '(c) &= d');
+});
+
 test('math lines that lost the callout prefix are re-quoted', () => {
   const t = repair('# H\n\n> [!example] X\n> $$\n> a &= b \\\\\nc &= d\n\ne &= f\n> $$\n> after\n');
   has(t, '> c &= d');
@@ -207,6 +222,13 @@ test('unbalanced ** does not merge blocks', () => {
   const t = repair('# H\n\n**Step 1: Find $a_0$\n\n$$a_0 = 1$$\n\n> [!tip] Trap\n> text\n\n**Step 2**\n');
   has(t, '\n$$a_0 = 1$$\n');
   has(t, '> [!tip] Trap\n> text');
+});
+test('NotebookLM nested bold inside parentheses no longer leaves the outer bold open', () => {
+  const t = repair('# H\n\n* **Staff Reading Impact:** value (**Staff Reading**), too high **appears high (**Staff reading appears too high**).\n\n* a (**Normal to gravity**) fine **bold** text\n');
+  has(t, '**appears high (Staff reading appears too high)**.');
+  has(repair('# H\n\nplain **opens here (**inner**), then **True angle** more.\n'), '**opens here (inner)**, then **True angle** more.');
+  has(t, '* a (**Normal to gravity**) fine **bold** text');
+  eq(repair(t), t, 'not idempotent');
 });
 test('bold spacing is fixed, code and math are untouched', () => {
   const t = repair('# H\n\n** spaced ** and **ok** and `**x**` and $a**b$\n');

@@ -112,7 +112,7 @@ class ConfirmModal extends Modal {
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
-    console.log('Loading Note Repair Tool Plugin V41...');
+    console.log('Loading Note Repair Tool Plugin V42...');
     await this.loadSettings();
     this.addSettingTab(new NoteRepairSettingTab(this.app, this));
 
@@ -398,6 +398,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     // 10d. Fix Obsidian block attribute stripping for \cline
     const blockAttrRes = this.fixMathJaxBlockAttributes(text);
     if (blockAttrRes.fixedCount > 0) { text = blockAttrRes.text; changes.push('Prevented Obsidian from stripping \\cline parameters'); }
+
+    // 10e. V42: nested bold inside parentheses that left the outer bold open
+    const nestedBoldRes = this.fixNestedBold(text);
+    if (nestedBoldRes.fixedCount > 0) { text = nestedBoldRes.text; changes.push(`Closed ${nestedBoldRes.fixedCount} unbalanced bold spans`); }
 
     // 11. Bold marker repair
     const boldRes = this.fixBoldFormatting(text);
@@ -1847,6 +1851,38 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     return { text: out.join('\n'), fixedCount };
   }
 
+  // V42: NotebookLM writes "**A (**B**) C" : the outer bold is opened but never closed because a nested bold pair sits
+  // inside parentheses. Drop the inner pair and close the outer one at the end of the sentence.
+  fixNestedBold(text) {
+    let fixedCount = 0;
+    const lines = text.split('\n');
+    let inCode = false;
+    let inMath = false;
+    const out = lines.map(l => {
+      const bare = l.replace(/^[ \t>]*/, '');
+      if (bare.startsWith('```')) { inCode = !inCode; return l; }
+      if (inCode) return l;
+      if (bare === '$$') { inMath = !inMath; return l; }
+      if (inMath || !l.includes('**')) return l;
+      const stash = [];
+      const masked = l.replace(/`[^`\n]*`|\$\$[^\n]*?\$\$|\$[^$\n]+\$/g, m => { stash.push(m); return '\u0000' + (stash.length - 1) + '\u0000'; });
+      const total = (masked.match(/\*\*/g) || []).length;
+      if (total % 2 === 0) return l;
+      // a parenthesised pair "(**X**)" that sits after an odd number of markers means an outer bold was left open:
+      // close it right after the parenthesis.
+      const re = /\(\*\*([^*\n]+?)\*\*\)/g;
+      let hit = null, m;
+      while ((m = re.exec(masked))) {
+        if (((masked.slice(0, m.index).match(/\*\*/g) || []).length) % 2 === 1) { hit = m; break; }
+      }
+      if (!hit) return l;
+      const fixed = masked.slice(0, hit.index) + '(' + hit[1] + ')**' + masked.slice(hit.index + hit[0].length);
+      fixedCount++;
+      return fixed.replace(/\u0000(\d+)\u0000/g, (m, i) => stash[Number(i)]);
+    });
+    return { text: out.join('\n'), fixedCount };
+  }
+
   // V38: build the TikZJax preamble from what the diagram really needs instead of a fixed one.
   // A pgfplots graph (\begin{axis}) used to be rebuilt WITHOUT pgfplots and failed with
   // "Environment axis undefined" (broken image icon). Libraries declared by the AI (calc, arrows.meta,
@@ -2029,14 +2065,18 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       if (bare.startsWith('```')) { inCode = !inCode; return line; }
       if (inCode || !/\\[()\[\]]/.test(line)) return line;
       const prefix = (line.match(/^[>\s]*/) || [''])[0];
-      if (bare === '\\[' || bare === '\\]') { fixedCount++; return prefix + '$$'; }
+      // NotebookLM / escaped exports write the delimiters with a doubled backslash: \\( \\) \\[ \\]
+      if (bare === '\\[' || bare === '\\]' || bare === '\\\\[' || bare === '\\\\]') { fixedCount++; return prefix + '$$'; }
+      const isRow = bare.startsWith('|');
 
       const stash = [];
       const masked = line.replace(/`[^`\n]*`/g, m => {
         stash.push(m);
         return '\u0000' + (stash.length - 1) + '\u0000';
       });
-      let l = masked.replace(/(?<!\\)\\\[(.+?)(?<!\\)\\\]/g, (m, inner) => '$$' + inner.trim() + '$$');
+      let l = masked.replace(/(?<!\\)\\\\\[(.+?)\\\\\]/g, (m, inner) => (isRow ? '$' + inner.trim() + '$' : '$$' + inner.trim() + '$$'));
+      l = l.replace(/(?<!\\)\\\\\((.+?)\\\\\)/g, (m, inner) => '$' + inner.trim() + '$');
+      l = l.replace(/(?<!\\)\\\[(.+?)(?<!\\)\\\]/g, (m, inner) => (isRow ? '$' + inner.trim() + '$' : '$$' + inner.trim() + '$$'));
       l = l.replace(/(?<!\\)\\\((.+?)(?<!\\)\\\)/g, (m, inner) => '$' + inner.trim() + '$');
       if (l !== masked) fixedCount++;
       return l.replace(/\u0000(\d+)\u0000/g, (m, i) => stash[Number(i)]);
