@@ -112,7 +112,7 @@ class ConfirmModal extends Modal {
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
-    console.log('Loading Note Repair Tool Plugin V42...');
+    console.log('Loading Note Repair Tool Plugin V43...');
     await this.loadSettings();
     this.addSettingTab(new NoteRepairSettingTab(this.app, this));
 
@@ -293,6 +293,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
   // exposes a table, splitting a callout leaves an empty '>', ...). This makes repairText idempotent by
   // construction: repairText(repairText(x).text).changed is always false.
   repairText(rawText) {
+    // V43: a note that contains a longer fence (````) is a prompt library / documentation that shows other fences
+    // and Markdown as examples. The fixers cannot tell example text from real content (and mangled such a file in
+    // the vault), so it is left untouched.
+    if (/^[ \t>]*`{4,}/m.test(rawText)) return { text: rawText, changed: false, summary: 'Skipped (contains ```` fences: prompt-style note)' };
     let text = rawText;
     let summary = '';
     let extra = 0;
@@ -1309,9 +1313,18 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     let fixedCount = 0;
     // Capture any prefix (like blockquotes or indentation) before ```tikz or ```circuitikz
     // V35 Fix: Support ```latex and ```tex blocks that contain tikz/circuitikz
-    let tikzRegex = /^([ \t>]*?)```(?:tikz|circuitikz|latex|tex)([\s\S]*?)```/gm;
+    let tikzRegex = /^([ \t>]*?)```(tikz|circuitikz|latex|tex)([\s\S]*?)```/gm;
 
-    let fixedText = text.replace(tikzRegex, (match, prefix, code) => {
+    let fixedText = text.replace(tikzRegex, (match, prefix, tag, code0) => {
+      // V43: structural problems that make TikZJax hang or fail (verified with the real TikZJax)
+      let code = this.normalizeTikzEnvs(code0);
+      if ((tag === 'tikz' || tag === 'circuitikz') && !/\\begin\{(?:tikzpicture|circuitikz)\}/.test(code)
+          && !/\S/.test(code.replace(/\\(?:usepackage|usetikzlibrary|documentclass)(?:\[[^\]]*\])?\{[^}]*\}|\\(?:begin|end)\{document\}|%[^\n]*/g, ''))) {
+        // An empty block (or one with only a preamble / empty document) never finishes compiling: endless spinner.
+        fixedCount++;
+        return '';
+      }
+      if (code !== code0) match = prefix + '```' + tag + code + '```';
       let envMatch = code.match(/\\begin\{(tikzpicture|circuitikz)\}([\s\S]*?)(\\end\{\1\})/);
       
       if (envMatch) {
@@ -1384,7 +1397,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
 
           let replacement = lines.join('\n');
 
-          if (match !== replacement) {
+          if (match !== replacement || code !== code0) {
               fixedCount++;
           }
           return replacement;
@@ -1394,6 +1407,22 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     });
 
     return { text: fixedText, fixedCount };
+  }
+
+  // V43: structural normalisation of a TikZ block's source.
+  //  - circuitikz 1.0 has no 'elmech' / 'block' bipole -> 'generic'
+  //  - \begin{circuitikz} ... \end{tikzpicture} (mismatched) -> end matches begin
+  //  - tikzpicture that only wraps a circuitikz -> unwrap
+  normalizeTikzEnvs(code) {
+    let c = code.replace(/(\bto\[\s*)(elmech|block)(?=\s*[,\]])/g, '$1generic');
+    c = c.replace(/\\begin\{tikzpicture\}(?:[ \t]*\[[^\]\n]*\])?\s*(\\begin\{circuitikz\}[\s\S]*?\\end\{circuitikz\})\s*\\end\{tikzpicture\}/, (m, inner) => inner);
+    const b = c.match(/\\begin\{(tikzpicture|circuitikz)\}/);
+    if (b && !new RegExp('\\\\end\\{' + b[1] + '\\}').test(c)) {
+      const other = b[1] === 'circuitikz' ? 'tikzpicture' : 'circuitikz';
+      const idx = c.lastIndexOf('\\end{' + other + '}');
+      if (idx >= 0) c = c.slice(0, idx) + '\\end{' + b[1] + '}' + c.slice(idx + other.length + 6);
+    }
+    return c;
   }
 
   // V38: fixes for AI-written TikZ that is valid-looking but does not compile in TikZJax:
@@ -1414,6 +1443,14 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       /\\[^a-zA-Z]|\\mathrel\{=\}|\{,\}|=|,/g,
       t => (t === '=' ? '\\mathrel{=}' : t === ',' ? '{,}' : t)
     ) + '$'));
+
+    // V43 (verified): a bare comma in the TEXT part of a circuitikz label (l={a, b}) is split as a new key
+    // ("I do not know the key '/b'"). '{,}' is a safe comma.
+    out = out.replace(/\[[^\[\]\n]*\]/g, opts => opts.replace(
+      /\b((?:l|a|v|i|f)[_^]?|label)=\{((?:[^{}]|\{[^{}]*\})*)\}/g,
+      (m, key, val) => key + '={' + val.split(/(\$[^$]*\$)/).map((seg, i) =>
+        i % 2 ? seg : seg.replace(/\{,\}/g, '\u0000').replace(/,/g, '{,}').replace(/\u0000/g, '{,}')).join('') + '}'
+    ));
 
     out = out.replace(/(\bnode\b[^;{}]*)\{((?:[^{}]|\{[^{}]*\})*)\}/g, (m, head, text) => head + '{' + this.fixTikzText(text) + '}');
 

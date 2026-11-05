@@ -404,6 +404,43 @@ test('textcomp commands (hang TikZJax) become math', () => {
   hasNot(t, 'textbullet');
 });
 
+test('V43: empty / env-less tikz blocks (endless spinner) are removed', () => {
+  const t = repair('before\n\n```tikz\n```\n\n```tikz\n\\begin{document}\n\\end{document}\n```\n\nafter\n');
+  hasNot(t, '```');
+  has(t, 'before');
+  has(t, 'after');
+});
+test('V43: elmech / block bipoles become generic', () => {
+  const t = repair(fence('\\begin{circuitikz}\n\\draw (0,0) to[elmech, l=M] (3,0) to[block, l=F] (5,0);\n\\end{circuitikz}'));
+  has(t, 'to[generic, l=');
+  hasNot(t, 'elmech');
+  hasNot(t, 'to[block');
+});
+test('V43: mismatched end and nested tikzpicture>circuitikz are normalised', () => {
+  const a = repair(fence('\\begin{circuitikz}\n\\draw (0,0) to[R] (3,0);\n\\end{tikzpicture}'));
+  has(a, '\\end{circuitikz}');
+  hasNot(a, '\\end{tikzpicture}');
+  const b = repair(fence('\\begin{tikzpicture}\n\\begin{circuitikz}\n\\draw (0,0) to[R] (3,0);\n\\end{circuitikz}\n\\end{tikzpicture}'));
+  hasNot(b, 'tikzpicture');
+  has(b, '\\begin{circuitikz}');
+});
+test('V43: bare comma in circuitikz label text becomes {,}', () => {
+  const t = repair(fence('\\begin{circuitikz}\n\\draw (0,0) to[R, l={band-pass, gain -1}] (3,0);\n\\end{circuitikz}'));
+  has(t, 'l={band-pass{,} gain -1}');
+});
+test('V43: a ```html block nested in a ```` fence is left alone', () => {
+  const doc = '````text\nprompt\n```html\n<script>\nM = { inlineMath: [[\'$\', \'$\'], [\'\\\\(\', \'\\\\)\']] };\n</script>\n```\n````\n';
+  const t = repair(doc);
+  has(t, "['\\\\(', '\\\\)']");
+  eq((t.match(/`/g) || []).length, 14);
+  has(repair(doc.replace(/\n/g, '\r\n')), "['\\\\(', '\\\\)']");
+});
+test('V43: tikz normalisation is idempotent', () => {
+  const src = fence('\\begin{tikzpicture}\n\\begin{circuitikz}\n\\draw (0,0) to[elmech] (3,0);\n\\end{circuitikz}\n\\end{tikzpicture}');
+  const once = repair(src);
+  eq(repair(once), once);
+});
+
 test('a stray ``` after the YAML is removed so the later fences pair up', () => {
   const doc = '---\ntags: [a]\n---\n\n```\n\n## 1. Inventory\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n## 2. Next\n\n```tikz\n\\begin{document}\n\\begin{circuitikz}\n\\draw (0,0) to[R] (2,0);\n\\end{circuitikz}\n\\end{document}\n```\n\ntext\n';
   const t = repair(doc);

@@ -2,6 +2,16 @@
 
 Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
 
+## V43 (1.43.0), 2026-11-05
+Audit of "TikZ diagram spins forever". All 305 ```tikz blocks of the vault were run through the real TikZJax (see `tools/tikzjax-check`): 15 failed raw and 10 after V42; after V43 all 303 remaining blocks compile (0 failures, 0 timeouts).
+- **Empty / environment-less ```tikz blocks are removed** (nothing, only blank lines, or only a preamble and an empty `\begin{document}\end{document}`). TikZJax never finishes these, so they stayed an endless spinner.
+- **`elmech` and `block` bipoles become `generic`** (they do not exist in the circuitikz 1.0 bundled with TikZJax: "Bipole not defined").
+- **Mismatched environments:** `\begin{circuitikz} ... \end{tikzpicture}` gets the matching end; a `tikzpicture` that only wraps a `circuitikz` is unwrapped.
+- **Bare commas in circuitikz label text** (`l={MFB band-pass, gain -1}`) become `{,}`; circuitikz 1.0 split them into bogus keys.
+- **Prompt-style notes are left untouched:** a note that contains a longer fence (```` ) is a prompt library or documentation showing other fences and Markdown as examples. Repair used to rewrite its examples (for example a JavaScript `'\\('` became `'$'` and inline examples were split across lines in `AI_Workflows/prompts.md`); it is now skipped with a message.
+- Verified: a failed block does NOT block the following blocks (a failing block is only itself a spinner), and the "TeX capacity exceeded" seen earlier in one harness run was a harness artefact (the same block renders fine on its own).
+- `tools/tikzjax-check/mktests.js` skips blocks the plugin removes and works with the stubbed Obsidian API.
+
 ## V42 (1.42.0), 2026-11-04
 - **NotebookLM math:** formulas exported with a doubled backslash (`\\( ... \\)` and `\\[ ... \\]`) are converted to `$ ... $` and `$$ ... $$` (inside table rows display math becomes inline). A LaTeX line break before a parenthesis inside real math (`\\` + `(c)`) is not touched.
 - **NotebookLM bold:** `**A (**B**) C` (an outer bold left open by a nested pair in parentheses) is closed right after the parenthesis, so the bold no longer runs wild.

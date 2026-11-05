@@ -14,7 +14,7 @@ const filter = process.argv[4];
 
 const orig = Module._load;
 Module._load = function (r, ...a) {
-  return r === 'obsidian' ? { Plugin: class {}, Notice: class {}, MarkdownView: class {}, Modal: class {} } : orig.call(this, r, ...a);
+  return r === 'obsidian' ? { Plugin: class {}, Notice: class {}, MarkdownView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {} } : orig.call(this, r, ...a);
 };
 const plugin = new (require('../../main.js'))();
 
@@ -40,7 +40,8 @@ for (const file of walk(root)) {
     if (mode === 'repaired') {
       const rep = plugin.repairText('```tikz\n' + code + '\n```\n').text;
       const mm = rep.match(/```tikz\r?\n([\s\S]*?)\r?\n```/);
-      if (mm) code = mm[1].replace(/\r/g, '');
+      if (!mm) continue; // the plugin removed this block (empty / no environment), so nothing is rendered
+      code = mm[1].replace(/\r/g, '');
     }
     tests.push({ id, file: path.relative(root, file), line: text.slice(0, m.index).split('\n').length, src: code });
   }
