@@ -435,6 +435,37 @@ test('V43: a ```html block nested in a ```` fence is left alone', () => {
   eq((t.match(/`/g) || []).length, 14);
   has(repair(doc.replace(/\n/g, '\r\n')), "['\\\\(', '\\\\)']");
 });
+test('V44: lone $ fences around block math become $$ and the inside is not wrapped again', () => {
+  const t = repair('> [!example] Q\n> text\n> $\n> \\int_C F \\cdot dr = \\int_C P\\,dx + Q\\,dy\n> $\n> more\n');
+  has(t, '> $$\n> \\int_C F \\cdot dr = \\int_C P\\,dx + Q\\,dy\n> $$');
+  hasNot(t, '$\\int_C F');
+  eq(repair(t), t);
+});
+test('V44: "$$ ... $" mismatch is repaired, an unpaired lone $ is left alone', () => {
+  has(repair('> [!note] a\n> $$\n> x = 1\n> $\n'), '> $$\n> x = 1\n> $$');
+  const keep = repair('The price\n$\nis five dollars\n');
+  has(keep, '\n$\n');
+});
+test('V44: damaged display math is healed (stray $ inside, rows glued with " > ", lost \\,)', () => {
+  const dmg = '> [!example] Worked Example\n> $\n> \\begin{aligned} > x &= \\cos t \\\\ > y &= $\\sin t$ > \\end{aligned}\n> $\n> $$ > \\int_C F \\cdot dr = \\int_C P , dx + Q , dy > $$\n';
+  const t = repair(dmg);
+  has(t, '> $$\n> \\begin{aligned}\n> x &= \\cos t \\\\\n> y &= \\sin t\n> \\end{aligned}\n> $$');
+  has(t, '> $$ \\int_C F \\cdot dr = \\int_C P\\,dx + Q\\,dy $$');
+  hasNot(t, ' > x &=');
+  eq(repair(t), t);
+});
+test('V44: valid display math is not touched (x > 0, \\text with a dollar)', () => {
+  const ok = '$$\n\\begin{aligned}\nx &> 0 \\\\\n\\text{cost } &= 5\n\\end{aligned}\n$$\n';
+  eq(repair(ok), ok);
+});
+test('V44: STATUS notation is shown literally, damaged $ form is healed, nothing is wrapped as math', () => {
+  const raw = 'STATUS: Chunk 3 | Done [5.2] | Progress 3 of 7 | Notation [\\hat{i}, \\text{div}, F_s] | Next [5.3]\n';
+  const t = repair(raw);
+  has(t, 'Notation [`\\hat{i}, \\text{div}, F_s`]');
+  const dmg = repair('STATUS: Chunk 1 | Notation $[\\hat{i}, \\nabla$, \\text{div}, $\\nabla^2, \\phi]$ | Next [x]\n');
+  hasNot(dmg, '$');
+  eq(repair(t), t);
+});
 test('V43: tikz normalisation is idempotent', () => {
   const src = fence('\\begin{tikzpicture}\n\\begin{circuitikz}\n\\draw (0,0) to[elmech] (3,0);\n\\end{circuitikz}\n\\end{tikzpicture}');
   const once = repair(src);

@@ -4,8 +4,11 @@ Scripts used to validate the plugin against a real vault. They never modify your
 
 ```bash
 cd tools/vault-audit
-npm install --no-save mathjax-full@3.2.2     # the MathJax version family Obsidian bundles
+npm install --no-save mathjax-full@3.2.2 markdown-it markdown-it-mathjax3   # real MathJax (the family Obsidian bundles) and a renderer
 
+node leak.js     "<folder>" [--repaired]     # renders every note and lists the exact line ranges where raw LaTeX shows up
+                                             # as plain text (math Obsidian cannot parse); --repaired applies the plugin first;
+                                             # PLUGIN=<path to another main.js> compares plugin versions
 node discover.js "<vault folder>"            # defects found in the notes as they are
 node dryrun.js   "<vault folder>"            # repairs every note in memory, writes the result to ./mirror,
                                              # and checks idempotency (a second pass must change nothing)

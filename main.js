@@ -112,7 +112,7 @@ class ConfirmModal extends Modal {
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
-    console.log('Loading Note Repair Tool Plugin V43...');
+    console.log('Loading Note Repair Tool Plugin V44...');
     await this.loadSettings();
     this.addSettingTab(new NoteRepairSettingTab(this.app, this));
 
@@ -398,6 +398,14 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     // 10c. Fix single $ used for multiline math blocks inside blockquotes
     const singleDollarRes = this.fixSingleDollarMathBlocks(text);
     if (singleDollarRes.fixedCount > 0) { text = singleDollarRes.text; changes.push('Fixed blockquote multi-line math block enclosures ($$ instead of $)'); }
+
+    // 10c2. V44: heal display math that was damaged (stray $...$ inside, rows glued with ' > ', lost \,)
+    const damagedMathRes = this.fixDamagedDisplayMath(text);
+    if (damagedMathRes.fixedCount > 0) { text = damagedMathRes.text; changes.push(`Healed ${damagedMathRes.fixedCount} damaged math blocks`); }
+
+    // 10c3. V44: STATUS lines: show the notation list literally
+    const statusRes = this.fixStatusLines(text);
+    if (statusRes.fixedCount > 0) { text = statusRes.text; changes.push('Protected STATUS notation lists'); }
 
     // 10d. Fix Obsidian block attribute stripping for \cline
     const blockAttrRes = this.fixMathJaxBlockAttributes(text);
@@ -1827,6 +1835,7 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       if (yaml) { if (idx > 0 && l.trim() === '---') yaml = false; return l; }
       if (bare.startsWith('```')) { inCode = !inCode; return l; }
       if (inCode) return l;
+      if (/^STATUS:/.test(bare)) return l; // V44: the progress line is never "math" (its Notation list used to get wrapped in stray $)
       const dd = (bare.replace(/`[^`]*`/g, '').match(/\$\$/g) || []).length;
       if (dd % 2 === 1) { inMath = !inMath; return l; }
       if (inMath || dd > 0) return l;
@@ -1979,18 +1988,125 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     return { text: fixedText, fixedCount };
   }
 
+  // V44: display math fenced by a LONE "$" line ("> $" ... "> $"), which Gemini often writes for block math, is turned into
+  // "$$" ... "$$". The old version did replace('$', '$$'), and in a JavaScript replacement string '$$' means ONE '$',
+  // so it never changed anything while still reporting a fix. Now it only converts properly PAIRED fences whose content looks
+  // like math, in callouts and at the root, and also repairs a "$$" ... "$" mismatch.
   fixSingleDollarMathBlocks(text) {
     let fixedCount = 0;
-    // Replace lines that consist of exactly "> $" (or similar spacing) with "> $$"
-    // This fixes multi-line math blocks in blockquotes that AI generated with single $, which breaks markdown parsing
-    let lines = text.split('\n');
+    const lines = text.split('\n');
+    const bareOf = l => l.replace(/^[ \t>]*/, '').trim();
+    const isFence = b => b === '$' || b === '$$';
+    let inCode = false;
     for (let i = 0; i < lines.length; i++) {
-        if (lines[i].match(/^[ \t]*>[ \t]*\$[ \t]*$/)) {
-            lines[i] = lines[i].replace('$', '$$');
-            fixedCount++;
+      if (lines[i].replace(/^[ \t>]*/, '').startsWith('```')) { inCode = !inCode; continue; }
+      if (inCode) continue;
+      if (!isFence(bareOf(lines[i]))) continue;
+      let j = i + 1, paired = false, mathy = false;
+      for (; j < lines.length && j - i <= 60; j++) {
+        const b = bareOf(lines[j]);
+        if (isFence(b)) { paired = true; break; }
+        if (b === '' || /^#{1,6}\s/.test(b) || /^\[!/.test(b) || b.startsWith('```')) break;
+        if (/[\\^_=]/.test(b)) mathy = true;
+      }
+      if (!paired) continue;
+      if (bareOf(lines[i]) === '$$' && bareOf(lines[j]) === '$$') { i = j; continue; }
+      if (mathy) {
+        for (const k of [i, j]) {
+          if (bareOf(lines[k]) === '$') { lines[k] = lines[k].replace('$', () => '$$'); fixedCount++; }
         }
+      }
+      i = j;
     }
     return { text: lines.join('\n'), fixedCount };
+  }
+
+  // V44: heals display math that earlier runs (or a lone-"$" fence) damaged: stray "$...$" pieces inside the block
+  // ("\begin{aligned} > $\frac{a}{b}$ &= ..."), rows glued together with a literal " > " (a joined quoted line that kept its '>'),
+  // and the thin space of "P\,dx" that was reduced to "P , dx". Only "$$" blocks are touched, and only when something is wrong.
+  fixDamagedDisplayMath(text) {
+    let fixedCount = 0;
+    const clean = (s) => {
+      const keep = [];
+      let t = s.replace(/\\text\{[^{}]*\}/g, m => { keep.push(m); return '\u0001' + (keep.length - 1) + '\u0002'; });
+      const before = t;
+      t = t.replace(/(\\\\)[ \t]*>[ \t]*/g, (m, a) => a + '\n');
+      t = t.replace(/(\\begin\{[A-Za-z*]+\}(?:\{[^{}]*\})?)[ \t]*>[ \t]*/g, (m, a) => a + '\n');
+      t = t.replace(/[ \t]*>[ \t]*(\\end\{[A-Za-z*]+\})/g, (m, a) => '\n' + a);
+      t = t.replace(/^[ \t]*>[ \t]+/, '').replace(/[ \t]+>[ \t]*$/, '');
+      t = t.replace(/(?<!\\)\$/g, '');
+      if (t !== before) t = t.replace(/[ \t]+,[ \t]+(d[A-Za-z])(?![A-Za-z])/g, (m, d) => '\\,' + d);
+      t = t.replace(/\u0001(\d+)\u0002/g, (m, n) => keep[+n]);
+      return t;
+    };
+    const lines = text.split('\n');
+    const out = [];
+    let inCode = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const m = line.match(/^([ \t>]*)([^\n]*)$/);
+      const prefix = m[1];
+      const bare = m[2].trim();
+      if (bare.startsWith('```')) { inCode = !inCode; out.push(line); continue; }
+      if (inCode) { out.push(line); continue; }
+      // single-line display math: $$ ... $$
+      if (bare.length > 4 && bare.startsWith('$$') && bare.endsWith('$$') && !bare.slice(2, -2).includes('$$')) {
+        const inner = bare.slice(2, -2);
+        const c = clean(inner);
+        if (c !== inner) {
+          fixedCount++;
+          if (c.includes('\n')) {
+            out.push(prefix + '$$');
+            for (const l of c.split('\n')) if (l.trim()) out.push(prefix + l.trim());
+            out.push(prefix + '$$');
+          } else out.push(prefix + '$$ ' + c.trim() + ' $$');
+          continue;
+        }
+        out.push(line);
+        continue;
+      }
+      // fenced display math: $$ on its own line ... $$ on its own line
+      if (bare === '$$') {
+        let j = i + 1, closed = false;
+        for (; j < lines.length && j - i <= 60; j++) {
+          const b = lines[j].replace(/^[ \t>]*/, '').trim();
+          if (b === '$$') { closed = true; break; }
+          if (b === '' || /^#{1,6}\s/.test(b) || /^\[!/.test(b) || b.startsWith('```')) break;
+        }
+        if (closed) {
+          const body = [];
+          let changed = false;
+          for (let k = i + 1; k < j; k++) {
+            const content = lines[k].replace(/^[ \t>]*/, '');
+            const c = clean(content);
+            if (c !== content) changed = true;
+            for (const l of c.split('\n')) if (l.trim()) body.push(prefix + l.trim());
+          }
+          out.push(line);
+          if (changed) fixedCount++;
+          if (changed) out.push(...body); else for (let k = i + 1; k < j; k++) out.push(lines[k]);
+          out.push(lines[j]);
+          i = j;
+          continue;
+        }
+      }
+      out.push(line);
+    }
+    return { text: out.join('\n'), fixedCount };
+  }
+
+  // V44: STATUS lines keep their raw LaTeX in "Notation [\text{lux}, F_s, ...]". Markdown eats the backslashes and italicises
+  // the underscores, so the progress line looked like garbage. The notation list is shown literally (inline code).
+  fixStatusLines(text) {
+    let fixedCount = 0;
+    const out = text.split('\n').map(line => {
+      // also heals the damaged form  Notation $[\hat{i}, \nabla$, \text{div}, ...]  (stray $ from the old math wrapper)
+      const m = line.match(/^([ \t>]*STATUS:[^\n]*?\bNotation )\$?\[([^\n]*?)\]((?: \| Next\b[^\n]*)?)$/);
+      if (!m || m[2].includes('`') || !/[\\_^{$]/.test(m[2])) return line;
+      fixedCount++;
+      return m[1] + '[`' + m[2].replace(/(?<!\\)\$/g, '') + '`]' + m[3];
+    });
+    return { text: out.join('\n'), fixedCount };
   }
 
   fixMathJaxBlockAttributes(text) {

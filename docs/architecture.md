@@ -46,7 +46,7 @@ flowchart LR
 | 8 | `fixMermaid` | Quote labels, plain-text labels, arrows, prefix on closing fences |
 | 9 | `fixBrokenHighlights` | Unclosed `==` outside code and math |
 | 10 | `fixTikz` | Rebuild TikZ blocks (see below) |
-| 10b to 10d | `fixCollapsedMath`, `fixSingleDollarMathBlocks`, `fixMathJaxBlockAttributes` | Math arrays and `\cline` inside blockquotes |
+| 10b to 10d | `fixCollapsedMath`, `fixSingleDollarMathBlocks`, `fixDamagedDisplayMath`, `fixStatusLines`, `fixMathJaxBlockAttributes` | Math arrays and `\cline` inside blockquotes; lone-`$` fences become `$$` (paired fences only); damaged `$$` blocks are healed (stray `$`, rows glued with ` > `, lost `\,`); STATUS notation lists shown literally |
 | 11 | `fixBoldFormatting` | Trim spaces inside `**`, line-local |
 | 12 | `fixCodeBlockLanguages` | Tag untagged fences after a "Code snippet", "Matlab" or "Python" label |
 | 13 | `fixYoutubeLinks` | Links to iframes |

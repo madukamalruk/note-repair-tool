@@ -2,6 +2,14 @@
 
 Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
 
+## V44 (1.44.0), 2026-11-09
+Found by rendering the 14 notes of `MA2024 Calculus` (copied from the new lecture-note prompt) with real MathJax: Chapter 05 Questions 11-14 showed `\begin{aligned} > $\frac{...}` as raw red text.
+- **Root cause, a bug that had been there for many versions:** `fixSingleDollarMathBlocks` did `replace('$', '$$')`, and in a JavaScript replacement string `'$$'` means ONE `$`, so it never changed a thing while still reporting "Fixed ... ($$ instead of $)". Block math that Gemini fenced with a lone `$` line (`> $` ... `> $`) therefore stayed broken, and the plain-text math wrapper then wrapped pieces inside it (`$\int_C F \cdot$ dr`). It now converts properly paired lone-`$` fences (also a `$$` ... `$` mismatch) to `$$`, in callouts and at the root; an unpaired lone `$` is left alone.
+- **Healing of already damaged blocks (`fixDamagedDisplayMath`):** inside `$$` blocks stray `$...$` pieces are removed, rows that were glued with a literal ` > ` (after `\\`, around `\begin` / `\end`, or `$$ > ... > $$` on one line) are split again, and `P , dx` gets its `\,` back. Valid math (`x > 0`, `\text{...}`) is untouched.
+- **STATUS lines:** the plain-text math wrapper no longer touches them (it had turned `Notation [\hat{i}, ..., \text{div}]` into `Notation $[\hat{i}, \nabla$, \text{div}, ...`), existing damage is healed, and the Notation list is shown literally in inline code.
+- New tool `tools/vault-audit/leak.js`: renders every note with real MathJax and lists the exact line ranges where raw LaTeX shows up as plain text (`--repaired` applies the plugin first, `PLUGIN=<main.js>` compares versions).
+- Result on the Calculus folder: blocks with raw LaTeX 13 before, 0 after repair (the only remaining hit is a `$$` inside a table cell, which only the test renderer cannot parse); second repair changes nothing.
+
 ## V43 (1.43.0), 2026-11-05
 Audit of "TikZ diagram spins forever". All 305 ```tikz blocks of the vault were run through the real TikZJax (see `tools/tikzjax-check`): 15 failed raw and 10 after V42; after V43 all 303 remaining blocks compile (0 failures, 0 timeouts).
 - **Empty / environment-less ```tikz blocks are removed** (nothing, only blank lines, or only a preamble and an empty `\begin{document}\end{document}`). TikZJax never finishes these, so they stayed an endless spinner.
