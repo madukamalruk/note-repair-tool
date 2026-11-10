@@ -466,6 +466,38 @@ test('V44: STATUS notation is shown literally, damaged $ form is healed, nothing
   hasNot(dmg, '$');
   eq(repair(t), t);
 });
+test('V45: multi-line \\\\[ ... \\\\] block with stray $ inside becomes a clean $$ block', () => {
+  const raw = 'දැන් ඡේදනය:\n\\\\[\\begin{aligned}\n\\text{Dom} &= $D_x$ \\cap $D_y$ \\\\\n&= [0, $\\infty)$\n\\end{aligned}\\\\]\nඉවරයි\n';
+  const t = repair(raw);
+  has(t, '$$\n\\begin{aligned}\n\\text{Dom} &= D_x \\cap D_y \\\\\n&= [0, \\infty)\n\\end{aligned}\n$$');
+  hasNot(t, '\\\\[');
+  eq(repair(t), t);
+});
+test('V45: mismatched delimiters and "</aligned}" are repaired', () => {
+  has(repair('see \\\\(x^2\\\\] here\n'), 'see $x^2$ here');
+  const t = repair('$$\n\\begin{aligned}\na &= 1 \\\\\nb &= 2\n</aligned}\n$$\n');
+  has(t, '\\end{aligned}');
+  hasNot(t, '</aligned}');
+});
+test('V45: a row spacing \\\\[2pt] is not taken for a display delimiter', () => {
+  const ok = '$$\n\\begin{aligned}\na &= 1 \\\\\n\\\\[2pt]\nb &= 2\n\\end{aligned}\n$$\n';
+  eq(repair(ok), ok);
+});
+test('V45: ">" inside wrapped math is rejoined (root level and inside a callout)', () => {
+  const root = repair('ඕනෑම $\\epsilon\n> 0$ සඳහා,\n   * $\\text{div } F\n> 0$: පිටතට\n');
+  has(root, '$\\epsilon > 0$ සඳහා');
+  has(root, '$\\text{div } F > 0$: පිටතට');
+  const co = repair('> [!example] Q\n> Let $x^2 = a^2 \\quad (a\n> 0)$ be given.\n');
+  has(co, '> Let $x^2 = a^2 \\quad (a > 0)$ be given.');
+  // a normal callout block formula with $$ fences must not be joined
+  const fence = '> [!note] a\n> $$\n> x > 0\n> $$\n';
+  eq(repair(fence), fence);
+});
+test('V45: \\oiint (not in MathJax) becomes a double contour integral', () => {
+  const t = repair('$$\\oiint_\\sigma \\mathbf{F} \\cdot \\mathbf{n} \\, dS$$\n');
+  has(t, '\\oint\\!\\!\\!\\!\\oint_\\sigma');
+  hasNot(t, '\\oiint');
+});
 test('V43: tikz normalisation is idempotent', () => {
   const src = fence('\\begin{tikzpicture}\n\\begin{circuitikz}\n\\draw (0,0) to[elmech] (3,0);\n\\end{circuitikz}\n\\end{tikzpicture}');
   const once = repair(src);

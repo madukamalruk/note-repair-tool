@@ -112,7 +112,7 @@ class ConfirmModal extends Modal {
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
-    console.log('Loading Note Repair Tool Plugin V44...');
+    console.log('Loading Note Repair Tool Plugin V45...');
     await this.loadSettings();
     this.addSettingTab(new NoteRepairSettingTab(this.app, this));
 
@@ -334,6 +334,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     // 1c. V37: \( \) and \[ \] math delimiters do not render in Obsidian
     const mathDelimRes = this.fixMathDelimiters(text);
     if (mathDelimRes.fixedCount > 0) { text = mathDelimRes.text; changes.push('Converted \\( \\) / \\[ \\] math to $ / $$'); }
+
+    // 1c2. V45: ">" inside wrapped math that Markdown read as a blockquote
+    const gtMathRes = this.fixGreaterThanInMath(text);
+    if (gtMathRes.fixedCount > 0) { text = gtMathRes.text; changes.push(`Rejoined ${gtMathRes.fixedCount} formulas split at a ">" sign`); }
 
     // 2. YAML fixes (blank line after YAML, cleanup)
     const yamlRes = this.fixYaml(text);
@@ -1752,6 +1756,8 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       s = s.replace(/\\left\s*\{/g, '\\left\\{').replace(/\\right\s*\}/g, '\\right\\}');
       s = s.replace(/(?<!\\)%/g, '\\%');
       if (!hasEnv) s = s.replace(/(?<!\\)&/g, '\\&');
+      // V45: \oiint / \oiiint (closed surface / volume integral) do not exist in MathJax ("Undefined control sequence")
+      s = s.replace(/\\oiiint(?![A-Za-z])/g, () => '\\oint\\!\\!\\!\\!\\oint\\!\\!\\!\\!\\oint').replace(/\\oiint(?![A-Za-z])/g, () => '\\oint\\!\\!\\!\\!\\oint');
       return s;
     };
 
@@ -2209,14 +2215,111 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
   // ─── V37 ─────────────────────────────────────────────────────────────
 
   // V37: Obsidian does not render \( \) and \[ \]. Convert them to $ and $$.
-  fixMathDelimiters(text) {
+  // V45: NotebookLM turns a ">" (greater than) inside math into a line break followed by ">" ("n + 1" / "> \frac{...}"),
+  // which Markdown reads as a blockquote: the formula breaks and the rest of the paragraph is quoted. A line that starts with
+  // ">" while the previous line left a $ or $$ formula OPEN is joined back with " > ", but only when the formula closes within
+  // a few lines (never inside a real [!callout]), and the quote marks the break dragged onto the following lines are removed.
+  fixGreaterThanInMath(text) {
     let fixedCount = 0;
+    const state = (s, start) => {
+      let st = start;
+      const t = s.replace(/\\\$/g, '  ').replace(/`[^`\n]*`/g, m => ' '.repeat(m.length));
+      for (let i = 0; i < t.length; i++) {
+        if (t[i] !== '$') continue;
+        if (t[i + 1] === '$') { if (st === 2) st = 0; else if (st === 0) st = 2; i++; }
+        else if (st === 1) st = 0; else if (st === 0) st = 1;
+      }
+      return st;
+    };
+    const unquote = l => l.replace(/^[ \t]*>[ \t]?/, '');
+    const isHeader = l => /^[ \t]*>[ \t]*\[!/.test(l);
+    const lines = text.split('\n');
+    const out = [];
+    let inCode = false, st = 0, stray = false, callout = false;
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      const t = line.trim();
+      if (/^```/.test(t.replace(/^>\s*/, ''))) { inCode = !inCode; st = 0; out.push(line); continue; }
+      if (inCode) { out.push(line); continue; }
+      if (t === '') { st = 0; stray = false; callout = false; out.push(line); continue; }
+      if (isHeader(line)) callout = true;
+      if (stray && !callout && /^[ \t]*>/.test(line) && !isHeader(line)) line = unquote(line);
+      if (st !== 0 && /^[ \t]*>/.test(lines[i]) && !isHeader(lines[i]) && (!callout || (st === 1 && /^[ \t]*>/.test(out[out.length - 1] || '')))) {
+        let combined = out[out.length - 1], cur = st, k = i, ok = false;
+        while (k < lines.length && k - i < 6 && /^[ \t]*>/.test(lines[k]) && !isHeader(lines[k])) {
+          const piece = unquote(lines[k]).replace(/^\s+/, '');
+          combined += ' > ' + piece;
+          cur = state(piece, cur);
+          k++;
+          if (cur === 0) { ok = true; break; }
+        }
+        if (ok) {
+          out[out.length - 1] = combined;
+          fixedCount++;
+          stray = !callout;
+          st = 0;
+          i = k - 1;
+          continue;
+        }
+      }
+      // a line that is only "$" or "$$" is a fence of a block formula, not an open inline formula
+      st = /^[ \t>]*\${1,2}[ \t]*$/.test(line) ? 0 : state(line, st);
+      out.push(line);
+    }
+    return { text: out.join('\n'), fixedCount };
+  }
+
+  // V45: a display formula that spans several lines and is delimited by \[ ... \] or \\[ ... \\] with the delimiters
+  // glued to the first and last line of content ("\\[\begin{aligned}" ... "\end{aligned}\\]") becomes a real $$ block.
+  // Obsidian prints such text raw ("\[\begin{aligned} ..."). Row spacings like \\[2pt] are left alone.
+  fixMultilineDelimiters(text) {
+    let fixedCount = 0;
+    const lines = text.split('\n');
+    const out = [];
+    let inCode = false, inMath = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const pre = line.match(/^[ \t>]*/)[0];
+      const bare = line.slice(pre.length);
+      if (bare.startsWith('```')) { inCode = !inCode; out.push(line); continue; }
+      if (inCode) { out.push(line); continue; }
+      const dd = (bare.replace(/`[^`]*`/g, '').match(/\$\$/g) || []).length;
+      if (dd % 2 === 1) { inMath = !inMath; out.push(line); continue; }
+      const m = !inMath && bare.match(/^(?:\\\\|\\)\[(?!\])([^\n]*)$/);
+      if (m && !/(?:\\\\|\\)\]\s*$/.test(m[1]) && !/^\s*-?\d*\.?\d+\s*(?:pt|em|ex|cm|mm)\]/.test(m[1])) {
+        let j = i + 1, close = null;
+        for (; j < lines.length && j - i <= 60; j++) {
+          const bj = lines[j].replace(/^[ \t>]*/, '');
+          if (bj.trim() === '') break;
+          const c = bj.match(/^([^\n]*?)(?:\\\\|\\)\]\$?\s*$/);
+          if (c) { close = c; break; }
+        }
+        if (close) {
+          out.push(pre + '$$');
+          if (m[1].trim()) out.push(pre + m[1].trim());
+          for (let k = i + 1; k < j; k++) out.push(lines[k]);
+          if (close[1].trim()) out.push(pre + close[1].trim());
+          out.push(pre + '$$');
+          fixedCount++;
+          i = j;
+          continue;
+        }
+      }
+      out.push(line);
+    }
+    return { text: out.join('\n'), fixedCount };
+  }
+
+  fixMathDelimiters(text) {
+    const ml = this.fixMultilineDelimiters(text);
+    let fixedCount = ml.fixedCount;
+    text = ml.text;
     const lines = text.split('\n');
     let inCode = false;
     const out = lines.map(line => {
       const bare = line.replace(/^[>\s]*/, '');
       if (bare.startsWith('```')) { inCode = !inCode; return line; }
-      if (inCode || !/\\[()\[\]]/.test(line)) return line;
+      if (inCode || !(/\\[()\[\]]/.test(line) || /<\/(?:aligned|align\*?|gathered|split|vmatrix|pmatrix|bmatrix|Bmatrix|matrix|cases|array)\}/.test(line))) return line;
       const prefix = (line.match(/^[>\s]*/) || [''])[0];
       // NotebookLM / escaped exports write the delimiters with a doubled backslash: \\( \\) \\[ \\]
       if (bare === '\\[' || bare === '\\]' || bare === '\\\\[' || bare === '\\\\]') { fixedCount++; return prefix + '$$'; }
@@ -2231,6 +2334,11 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
       l = l.replace(/(?<!\\)\\\\\((.+?)\\\\\)/g, (m, inner) => '$' + inner.trim() + '$');
       l = l.replace(/(?<!\\)\\\[(.+?)(?<!\\)\\\]/g, (m, inner) => (isRow ? '$' + inner.trim() + '$' : '$$' + inner.trim() + '$$'));
       l = l.replace(/(?<!\\)\\\((.+?)(?<!\\)\\\)/g, (m, inner) => '$' + inner.trim() + '$');
+      // V45: delimiters of different kinds on one line (NotebookLM mangles them): \\( ... \\]  and  \\[ ... \\)
+      l = l.replace(/(?<!\\)(?:\\\\|\\)\((.+?)(?:\\\\|\\)\]/g, (m, inner) => '$' + inner.trim() + '$');
+      l = l.replace(/(?<!\\)(?:\\\\|\\)\[(.+?)(?:\\\\|\\)\)/g, (m, inner) => (isRow ? '$' + inner.trim() + '$' : '$$' + inner.trim() + '$$'));
+      // V45: "\end{aligned}" mangled into "</aligned}" (also vmatrix, pmatrix, cases, ...)
+      l = l.replace(/<\/(aligned|align\*?|gathered|split|vmatrix|pmatrix|bmatrix|Bmatrix|matrix|cases|array)\}/g, (m, env) => '\\end{' + env + '}');
       if (l !== masked) fixedCount++;
       return l.replace(/\u0000(\d+)\u0000/g, (m, i) => stash[Number(i)]);
     });

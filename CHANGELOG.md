@@ -2,6 +2,15 @@
 
 Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
 
+## V45 (1.45.0), 2026-11-10
+Found by rendering `Calculus By Notebooklm` (a 17,000-line note copied from NotebookLM): 329 blocks showed raw LaTeX and 192 formulas were MathJax errors. After V45 and a hand fix of one corrupted exercise: 0 and 0 (9,441 formulas render).
+- **Multi-line `\\[ ... \\]` / `\[ ... \]` blocks** whose delimiters are glued to the first and last line of content (`\\[\begin{aligned}` ... `\end{aligned}\\]`) become real `$$` blocks; the V44 healer then removes the stray `$...$` pieces inside. Row spacings such as `\\[2pt]` are left alone.
+- **Mismatched delimiters on one line** (`\\( ... \\]`, `\\[ ... \\)`), a closing `\\]` followed by a stray `$`, and **`</aligned}` / `</vmatrix}`** (a mangled `\end{...}`) are repaired.
+- **`>` inside wrapped math:** the exporter turned `n + 1 > \frac{a}{b}` into a line break followed by `> \frac{a}{b}`, which Markdown reads as a blockquote (the formula breaks and the rest of the paragraph is quoted). A line starting with `>` while the previous line left a `$` / `$$` formula open is joined back with ` > ` (only when the formula closes within a few lines; `$$` fences inside real callouts are never joined). 56 formulas of this note were rejoined and checked.
+- **`\oiint` / `\oiiint`** (not defined in MathJax, so Obsidian shows an error box) become `\oint\!\!\!\!\oint` (and the triple form).
+- `tools/vault-audit/leak.js` gained `--all` and survives a MathJax crash on a bad character.
+- Across the other 238 notes of the vault V45 changes nothing compared with V44.
+
 ## V44 (1.44.0), 2026-11-09
 Found by rendering the 14 notes of `MA2024 Calculus` (copied from the new lecture-note prompt) with real MathJax: Chapter 05 Questions 11-14 showed `\begin{aligned} > $\frac{...}` as raw red text.
 - **Root cause, a bug that had been there for many versions:** `fixSingleDollarMathBlocks` did `replace('$', '$$')`, and in a JavaScript replacement string `'$$'` means ONE `$`, so it never changed a thing while still reporting "Fixed ... ($$ instead of $)". Block math that Gemini fenced with a lone `$` line (`> $` ... `> $`) therefore stayed broken, and the plain-text math wrapper then wrapped pieces inside it (`$\int_C F \cdot$ dr`). It now converts properly paired lone-`$` fences (also a `$$` ... `$` mismatch) to `$$`, in callouts and at the root; an unpaired lone `$` is left alone.

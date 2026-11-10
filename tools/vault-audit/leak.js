@@ -79,6 +79,7 @@ const byFile = {};
 for (const o of out) (byFile[o.file] = byFile[o.file] || []).push(o);
 for (const [f, list] of Object.entries(byFile)) {
   console.log(`\n${f}: ${list.length}`);
-  for (const o of list.slice(0, 12)) console.log(`  ${o.from}-${o.to}  ${o.why.slice(0, 50)}  | ${o.head}`);
-  if (list.length > 12) console.log(`  ... ${list.length - 12} more`);
+  const all = process.argv.includes('--all');
+  for (const o of list.slice(0, all ? list.length : 12)) console.log(`  ${o.from}-${o.to}  ${o.why.slice(0, 50)}  | ${o.head}`);
+  if (!all && list.length > 12) console.log(`  ... ${list.length - 12} more (use --all)`);
 }
