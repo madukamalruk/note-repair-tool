@@ -498,6 +498,36 @@ test('V45: \\oiint (not in MathJax) becomes a double contour integral', () => {
   has(t, '\\oint\\!\\!\\!\\!\\oint_\\sigma');
   hasNot(t, '\\oiint');
 });
+test('V46: table fixer leaves code fences alone (ASCII art with | lines)', () => {
+  const doc = 'text\n\n```\n| a | b |\n|---|---|\n| 1 | 2 |\n   x(n) ---->| z^-1 |----> y(n)\n```\n';
+  eq(repair(doc), doc);
+});
+test('V46: partly wrapped formulas are merged into one $...$', () => {
+  has(repair('- **Rate:** $F_s$ \\ge 2F_{\\max}\n'), '- **Rate:** $F_s \\ge 2F_{\\max}$');
+  has(repair('- **Relation:** t = nT = $\\frac{n}{F_s}$\n'), '- **Relation:** $t = nT = \\frac{n}{F_s}$');
+  has(repair('- **Pair:** $a^n$ u(n) \\longleftrightarrow $\\frac{1}{1 - a z^{-1}}$\n'), '$a^n u(n) \\longleftrightarrow \\frac{1}{1 - a z^{-1}}$');
+  has(repair('- **SQNR:** \\text{SQNR} $\\approx 6.02 n$ \\text{ dB} සඳහා\n'), '$\\text{SQNR} \\approx 6.02 n \\text{ dB}$ සඳහා');
+  has(repair('- **FVT:** $\\lim_{n \\to \\infty}$ y(n) = \\lim_{z \\to 1} (1 - $z^{-1})$ Y(z)\n'), '$\\lim_{n \\to \\infty} y(n) = \\lim_{z \\to 1} (1 - z^{-1}) Y(z)$');
+});
+test('V46: fragment merger does not swallow words, Sinhala, list markers or tables', () => {
+  const ok1 = 'The value $x$ is greater than $y$ and also $z$ for all cases.\n';
+  eq(repair(ok1), ok1);
+  const ok2 = '- $\\angle H = 3$ සහ ප්‍රතිදානය $y$ වේ.\n';
+  eq(repair(ok2), ok2);
+  const t = repair('- \\angle $H(e^{j\\omega_0})$ = \\angle $B(e^{j\\omega_0})$\n');
+  has(t, '- $\\angle H(e^{j\\omega_0}) = \\angle B(e^{j\\omega_0})$');
+  const tab = '| a | $x$ \\ge 2 |\n| --- | --- |\n| 1 | 2 |\n';
+  eq(repair(tab), tab);
+  eq(repair(repair('- **Rate:** $F_s$ \\ge 2F_{\\max}\n')), repair('- **Rate:** $F_s$ \\ge 2F_{\\max}\n'));
+});
+test('V46: an empty table header row (Docs conversion) is dropped', () => {
+  const t = repair('|  |  |  |\n| --- | --- | --- |\n| Step | Process | Notes |\n| 1 | a | b |\n');
+  has(t, '| Step | Process | Notes |\n| --- | --- | --- |\n| 1 | a | b |');
+  hasNot(t, '|  |  |  |');
+  const ok = '| a | b |\n| --- | --- |\n| 1 | 2 |\n';
+  eq(repair(ok), ok);
+  eq(repair(t), t);
+});
 test('V43: tikz normalisation is idempotent', () => {
   const src = fence('\\begin{tikzpicture}\n\\begin{circuitikz}\n\\draw (0,0) to[elmech] (3,0);\n\\end{circuitikz}\n\\end{tikzpicture}');
   const once = repair(src);

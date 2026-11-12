@@ -112,7 +112,7 @@ class ConfirmModal extends Modal {
 
 module.exports = class NoteRepairToolPlugin extends Plugin {
   async onload() {
-    console.log('Loading Note Repair Tool Plugin V45...');
+    console.log('Loading Note Repair Tool Plugin V46...');
     await this.loadSettings();
     this.addSettingTab(new NoteRepairSettingTab(this.app, this));
 
@@ -355,6 +355,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     const tableStructRes = this.fixTableStructure(text);
     if (tableStructRes.fixedCount > 0) { text = tableStructRes.text; changes.push(`Rebuilt ${tableStructRes.fixedCount} broken tables`); }
 
+    // 2.95 V46: drop an empty table header row (Google Docs / Word conversions)
+    const emptyHeadRes = this.fixEmptyTableHeader(text);
+    if (emptyHeadRes.fixedCount > 0) { text = emptyHeadRes.text; changes.push(`Removed ${emptyHeadRes.fixedCount} empty table header rows`); }
+
     // 3. Tables (ONE pass only — bug fix: was running twice)
     const tableRes = this.fixTables(text);
     if (tableRes.mergedRows > 0) { text = tableRes.text; changes.push(`Merged ${tableRes.mergedRows} split table rows`); }
@@ -434,6 +438,10 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     // 14. Fix functionplot/chart blocks broken by previous hr fix
     const functionplotRes = this.fixFunctionPlotBlocks(text);
     if (functionplotRes.fixed) { text = functionplotRes.text; changes.push('Fixed graph code blocks'); }
+
+    // 15b. V46: formulas that were only partly wrapped in $...$
+    const fragMathRes = this.fixFragmentedMath(text);
+    if (fragMathRes.fixedCount > 0) { text = fragMathRes.text; changes.push(`Merged partly wrapped formulas in ${fragMathRes.fixedCount} lines`); }
 
     // 16. V40: LaTeX written as plain text
     const nakedRes = this.fixNakedLatex(text);
@@ -784,7 +792,68 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
     return { prefix: '', content: line };
   }
 
+  // V46: a table converted from Google Docs / Word starts with an EMPTY header row ("|  |  |  |" + "| --- | --- | --- |") and the
+  // real header sits in the first body row, so the table renders with a blank header. The empty row is dropped and the first
+  // body row becomes the header.
+  fixEmptyTableHeader(text) {
+    let fixedCount = 0;
+    const lines = text.split('\n');
+    const out = [];
+    let inCode = false;
+    const split = (l) => l.replace(/^[ \t>]*/, '').trim();
+    const isRow = (b) => /^\|.*\|$/.test(b);
+    const isSep = (b) => /^\|?[\s:|-]+\|?$/.test(b) && b.includes('-') && b.includes('|');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const bare = split(line);
+      if (bare.startsWith('```')) { inCode = !inCode; out.push(line); continue; }
+      if (!inCode && isRow(bare) && /^\|[\s|]*\|$/.test(bare) && i + 2 < lines.length
+          && isSep(split(lines[i + 1])) && isRow(split(lines[i + 2])) && !isSep(split(lines[i + 2]))) {
+        const cols = (s) => (s.match(/\|/g) || []).length;
+        if (cols(bare) === cols(split(lines[i + 1])) && cols(bare) === cols(split(lines[i + 2]))) {
+          out.push(lines[i + 2]);   // the real header
+          out.push(lines[i + 1]);   // separator
+          i += 2;
+          fixedCount++;
+          continue;
+        }
+      }
+      out.push(line);
+    }
+    return { text: out.join('\n'), fixedCount };
+  }
+
+  // V46: the table fixer used to rewrite "|" lines INSIDE code fences, so ASCII-art diagrams were damaged
+  // (a "| --- |" separator and blank lines appeared inside them). It now only ever sees text outside fences.
   fixTables(text) {
+    const lines = text.split('\n');
+    const out = [];
+    let cur = [];
+    let inCode = false;
+    let mergedRows = 0;
+    const flush = () => {
+      if (!cur.length) return;
+      const r = this.fixTablesCore(cur.join('\n'));
+      mergedRows += r.mergedRows;
+      out.push(r.text);
+      cur = [];
+    };
+    for (const l of lines) {
+      const bare = l.replace(/^[ \t>]*/, '');
+      if (bare.startsWith('```')) {
+        if (!inCode) flush();
+        inCode = !inCode;
+        out.push(l);
+        continue;
+      }
+      if (inCode) { out.push(l); continue; }
+      cur.push(l);
+    }
+    flush();
+    return { text: out.join('\n'), mergedRows };
+  }
+
+  fixTablesCore(text) {
       let mergedRows = 0;
       let originalText = text;
 
@@ -2215,6 +2284,164 @@ module.exports = class NoteRepairToolPlugin extends Plugin {
   // ─── V37 ─────────────────────────────────────────────────────────────
 
   // V37: Obsidian does not render \( \) and \[ \]. Convert them to $ and $$.
+  // V46: a formula that was only partly wrapped: "t = nT = $\frac{n}{F_s}$", "$F_s$ \ge 2F_{\max}",
+  // "$a^n$ u(n) \longleftrightarrow $\frac{1}{1-az^{-1}}$". Bare math pieces next to a $...$ piece are merged into ONE
+  // $...$. A piece is only absorbed when it is made of math tokens (LaTeX commands, sub/superscripts, '=', numbers, one or two
+  // letters, f(x)); words, Sinhala, bold markers, tables and code stop it. A run of only weak tokens (letters, numbers) is
+  // absorbed only when it sits between two $...$ pieces.
+  fixFragmentedMath(text) {
+    let fixedCount = 0;
+    const STOP = new Set(['of', 'to', 'is', 'in', 'at', 'or', 'if', 'as', 'by', 'on', 'an', 'be', 'no', 'so', 'we', 'it', 'do', 'go', 'he', 'me', 'up', 'us', 'and', 'the', 'for', 'not', 'are', 'can', 'all', 'any', 'but']);
+    const UNITS = new Set(['mv', 'ma', 'kv', 'ka', 'nf', 'pf', 'uf', 'mh', 'uh', 'kw', 'mw', 'hz', 'db', 'ms', 'us', 'ns', 'ps', 'kb', 'mb', 'gb', 'mm', 'cm', 'km', 'kg', 'mg', 'ml', 'kj']);
+    const kind = (tok) => {
+      if (!tok || /[^\x00-\x7F]/.test(tok) || tok.includes('*')) return null;
+      if (/^_|_$/.test(tok)) return null;                                  // Markdown italics, not a subscript
+      if (/^\|+$/.test(tok)) return null;                                  // a table cell separator
+      if (/\\[A-Za-z]|\\[,;:!]|[A-Za-z0-9}\])]_[{A-Za-z0-9\\]|\^/.test(tok)) return 'strong';
+      if (/\\/.test(tok)) return 'strong';
+      if (/^[=<>]+$/.test(tok)) return 'strong';
+      if (/^[+\-/]+$/.test(tok)) return 'weak';
+      if (/^[-+]?\d+(\.\d+)?[.]*$/.test(tok)) return 'weak';
+      if (/[,;:]$/.test(tok)) return null;                                 // prose punctuation after a bare token
+      const core = tok.replace(/^[(\[|]+/, '').replace(/[)\]|.]+$/, '');
+      if (/^\([A-Za-z0-9]\)[.]*$/.test(tok)) return null;                  // a label "(b)", "(2)"
+      if (STOP.has(core.toLowerCase()) || UNITS.has(core.toLowerCase())) return null;
+      if (/^[A-Za-z]{2}$/.test(core) && !/^[a-z][A-Z]$/.test(core)) return null;   // "vs", "Eq", "Hz" are words/units; "nT" is math
+      if (/^[(\[|]*[A-Za-z0-9]{1,3}[|)\]]*[.]*$/.test(tok) && /^([A-Za-z][A-Za-z0-9]{0,2}|\d{1,3})$/.test(core) && !/^[A-Za-z]{3}$/.test(core)
+          && !(/\.$/.test(tok) && !/^\d+$/.test(core))) return 'weak';          // a letter with a trailing period ("R.") is prose
+      if (/^[(\[|]*[A-Za-z]{1,2}\([A-Za-z0-9+\-*/ ,]*\)[|)\]]*[.]*$/.test(tok)) return 'weak';
+      return null;
+    };
+    // whitespace splits tokens only at brace depth 0, so "\lim_{z \to 1}" and "\text{ dB}" stay in one piece
+    const tokenize = (s) => {
+      const parts = [''];
+      let depth = 0;
+      for (const ch of s) {
+        const ws = /\s/.test(ch) && depth === 0;
+        const lastIsWs = parts.length % 2 === 0;
+        if (ws) { if (!lastIsWs) parts.push(ch); else parts[parts.length - 1] += ch; }
+        else {
+          if (lastIsWs) parts.push(ch); else parts[parts.length - 1] += ch;
+          if (ch === '{') depth++; else if (ch === '}') depth = Math.max(0, depth - 1);
+        }
+      }
+      return parts;
+    };
+    const lines = text.split('\n');
+    let inCode = false, inMath = false;
+    let yaml = lines[0] && lines[0].trim() === '---';
+    const out = lines.map((line, idx) => {
+      const pre = line.match(/^[ \t>]*/)[0];
+      const body = line.slice(pre.length);
+      if (yaml) { if (idx > 0 && line.trim() === '---') yaml = false; return line; }
+      if (body.startsWith('```')) { inCode = !inCode; return line; }
+      if (inCode) return line;
+      const dd = (body.replace(/`[^`]*`/g, '').match(/\$\$/g) || []).length;
+      if (dd % 2 === 1) { inMath = !inMath; return line; }
+      if (inMath || dd > 0 || body.startsWith('|') || /`/.test(body) || !body.includes('$')) return line;
+      if ((body.replace(/\\\$/g, '').match(/\$/g) || []).length % 2 === 1) return line;
+      // split into text / inline-math segments
+      const segs = [];
+      let last = 0;
+      for (const m of body.matchAll(/\$[^$\n]+\$/g)) {
+        segs.push({ t: 'text', s: body.slice(last, m.index) });
+        segs.push({ t: 'math', s: m[0].slice(1, -1) });
+        last = m.index + m[0].length;
+      }
+      segs.push({ t: 'text', s: body.slice(last) });
+      // tokens of every text segment
+      for (const sg of segs) {
+        if (sg.t !== 'text') continue;
+        sg.parts = tokenize(sg.s);                            // alternating token / whitespace
+        sg.toks = []; sg.parts.forEach((p, i) => { if (i % 2 === 0 && p !== '') sg.toks.push(i); });
+      }
+      // a list marker ("-", "*", "1.") at the start of the line is never part of a formula
+      const firstSeg = segs[0];
+      if (firstSeg.t === 'text' && firstSeg.toks.length && /^([-*+]|\d+[.)])$/.test(firstSeg.parts[firstSeg.toks[0]])) firstSeg.block = firstSeg.toks[0];
+      const glueFrom = (sg, fromStart) => {                  // indexes (into sg.parts) of the glue tokens at one end
+        const idxs = [];
+        const order = fromStart ? sg.toks : [...sg.toks].reverse();
+        for (const i of order) { if (i !== sg.block && kind(sg.parts[i])) idxs.push(i); else break; }
+        return fromStart ? idxs : idxs.reverse();
+      };
+      // evidence that a bare run belongs to the formula: a LaTeX command / sub-superscript / '=' or a function call like Y(z)
+      // A run next to a $...$ piece is absorbed only with real evidence: a LaTeX command, a sub/superscript, a function call like
+      // Y(z), or (before a formula) an equation chain "t = nT =". A run after a formula may not end with a bare operator
+      // ("$V$ = Cutting speed" stays), and a run before a formula may not start with one ("Units = $K$" stays).
+      // parentheses must balance inside the run: drop tokens from the outer end until they do ("2) =" is prose, "(b_1" belongs after)
+      const trimRun = (sg, idxs, role) => {
+        const arr = [...idxs];
+        const bal = () => { const s = arr.map(i => sg.parts[i]).join(' '); return [s.split('(').length - 1, s.split(')').length - 1]; };
+        for (;;) {
+          if (!arr.length) return arr;
+          const [o, c] = bal();
+          if (role === 'prefix' && c > o) arr.shift();
+          else if (role === 'suffix' && o > c) arr.pop();
+          else return arr;
+        }
+      };
+      const isOp = (t) => /^[=+\-/|<>]+$/.test(t);
+      const evid = (t) => /\\[A-Za-z]|[A-Za-z0-9}\])]_[{A-Za-z0-9\\]|\^/.test(t) || /^[(\[|]*[A-Za-z]{1,2}\([A-Za-z0-9+\-*/ ,]*\)[|)\]]*[.,;:]*$/.test(t);
+      const okRun = (sg, idxs, role) => {
+        if (!idxs.length) return false;
+        const toks = idxs.map(i => sg.parts[i]);
+        if (role === 'prefix') {
+          if (isOp(toks[0])) return false;
+          return toks.some(evid) || toks.indexOf('=') > 0;
+        }
+        if (isOp(toks[toks.length - 1])) return false;
+        return toks.some(evid);
+      };
+      let changed = false;
+      const outParts = [];
+      let acc = null;                                          // math being collected
+      for (let k = 0; k < segs.length; k++) {
+        const sg = segs[k];
+        if (sg.t === 'math') { acc = acc === null ? sg.s : acc + ' ' + sg.s; continue; }
+        const prevMath = k > 0, nextMath = k < segs.length - 1;
+        let start = prevMath ? glueFrom(sg, true) : [];
+        let end = nextMath ? glueFrom(sg, false) : [];
+        const whole = sg.toks.length > 0 && start.length === sg.toks.length;
+        // a run between two formulas that is only operators ("$a$ = $b$", "$x$ / $y$") is left alone
+        const sandwiched = whole && prevMath && nextMath && !sg.toks.every(i => /^[=+\-/<>]+$/.test(sg.parts[i]));
+        if (!sandwiched) {
+          start = trimRun(sg, start, 'suffix');
+          end = trimRun(sg, end, 'prefix');
+          if (!okRun(sg, start, 'suffix')) start = [];
+          if (!okRun(sg, end, 'prefix')) end = [];
+          // do not let the two runs overlap
+          if (start.length && end.length && start[start.length - 1] >= end[0]) end = [];
+        }
+        if (sandwiched) { acc += ' ' + sg.toks.map(i => sg.parts[i]).join(' '); changed = true; continue; }
+        // trailing punctuation of the right-hand end of a start-run stays outside the math
+        let startTokens = start.map(i => sg.parts[i]);
+        let tail = '';
+        if (start.length && (start.length < sg.toks.length || !nextMath || !end.length)) {
+          const lastTok = startTokens[startTokens.length - 1];
+          const m = lastTok.match(/^(.*?)([.,;:]+)$/);
+          if (m && m[1]) { startTokens[startTokens.length - 1] = m[1]; tail = m[2]; }
+        }
+        if (startTokens.length) { acc += ' ' + startTokens.join(' '); changed = true; }
+        if (acc !== null) { outParts.push('$' + acc + '$'); acc = null; }
+        // the rest of the text, minus the tokens that were absorbed
+        const first = start.length ? start[start.length - 1] + 1 : 0;
+        const stop = end.length ? end[0] : sg.parts.length;
+        let rest = sg.parts.slice(first, stop).join('');
+        if (end.length) {
+          const endTokens = end.map(i => sg.parts[i]);
+          acc = endTokens.join(' ');
+          changed = true;
+        }
+        outParts.push(tail + rest);
+      }
+      if (acc !== null) outParts.push('$' + acc + '$');
+      if (!changed) return line;
+      fixedCount++;
+      return pre + outParts.join('');
+    });
+    return { text: out.join('\n'), fixedCount };
+  }
+
   // V45: NotebookLM turns a ">" (greater than) inside math into a line break followed by ">" ("n + 1" / "> \frac{...}"),
   // which Markdown reads as a blockquote: the formula breaks and the rest of the paragraph is quoted. A line that starts with
   // ">" while the previous line left a $ or $$ formula OPEN is joined back with " > ", but only when the formula closes within

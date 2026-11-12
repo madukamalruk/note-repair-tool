@@ -2,6 +2,24 @@
 
 Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
 
+## V46 (1.46.0), 2026-11-12
+Found on the DSP Master Note (a Google-Docs style cheat sheet and ASCII diagrams). After repair: 0 MathJax errors, 0 raw-LaTeX blocks.
+- **Code fences are never touched by the table fixer.** `fixTables` used to rewrite `|` lines inside code fences, which damaged ASCII-art diagrams (a `| --- |` separator and blank lines appeared inside them).
+- **Partly wrapped formulas are merged** (`fixFragmentedMath`): `t = nT = $rac{n}{F_s}# Changelog
+
+Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
+
+, `$F_s$ ge 2F_{max}`, `$a^n$ u(n) longleftrightarrow $rac{1}{..}# Changelog
+
+Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
+
+ become one `$...# Changelog
+
+Versions are labelled `V<n>`; `manifest.json` uses `1.<n>.0`. Dates are commit dates. Entries before V8 predate the version labels and are grouped by theme.
+
+. Only math tokens next to a formula are absorbed (LaTeX commands, sub/superscripts, function calls, equation chains); words, units, labels like (b), Sinhala, list markers, table cells and operator-only runs between two formulas are left alone. Checked against all 245 notes of the vault: 14 notes change, all for the better.
+- **Empty table header rows** (Docs/Word conversions: a blank header row, real header in the first body row) are dropped.
+
 ## V45 (1.45.0), 2026-11-10
 Found by rendering `Calculus By Notebooklm` (a 17,000-line note copied from NotebookLM): 329 blocks showed raw LaTeX and 192 formulas were MathJax errors. After V45 and a hand fix of one corrupted exercise: 0 and 0 (9,441 formulas render).
 - **Multi-line `\\[ ... \\]` / `\[ ... \]` blocks** whose delimiters are glued to the first and last line of content (`\\[\begin{aligned}` ... `\end{aligned}\\]`) become real `$$` blocks; the V44 healer then removes the stray `$...$` pieces inside. Row spacings such as `\\[2pt]` are left alone.
